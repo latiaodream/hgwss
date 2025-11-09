@@ -33,6 +33,9 @@ class Application {
     // 创建日志目录
     this.ensureLogDirectory();
 
+    // 创建 PID 文件
+    this.createPidFile();
+
     // 加载账号配置
     const accounts = this.loadAccounts();
     if (accounts.length === 0) {
@@ -114,6 +117,38 @@ class Application {
   }
 
   /**
+   * 创建 PID 文件
+   */
+  private createPidFile(): void {
+    const pidFile = path.join(process.cwd(), 'crown-scraper.pid');
+
+    // 检查是否有旧的 PID 文件
+    if (fs.existsSync(pidFile)) {
+      const oldPid = fs.readFileSync(pidFile, 'utf-8').trim();
+      logger.warn(`⚠️ 检测到旧的 PID 文件: ${oldPid}`);
+      logger.warn(`⚠️ 如果旧进程还在运行，请先停止它以避免账号被封`);
+
+      // 删除旧的 PID 文件
+      fs.unlinkSync(pidFile);
+    }
+
+    // 写入当前进程 PID
+    fs.writeFileSync(pidFile, process.pid.toString());
+    logger.info(`📝 PID 文件已创建: ${process.pid}`);
+  }
+
+  /**
+   * 删除 PID 文件
+   */
+  private removePidFile(): void {
+    const pidFile = path.join(process.cwd(), 'crown-scraper.pid');
+    if (fs.existsSync(pidFile)) {
+      fs.unlinkSync(pidFile);
+      logger.info('🗑️ PID 文件已删除');
+    }
+  }
+
+  /**
    * 启动 HTTP 服务器
    */
   private startHttpServer(port: number): void {
@@ -147,23 +182,41 @@ class Application {
    * 优雅关闭
    */
   async shutdown(): Promise<void> {
-    logger.info('正在关闭服务...');
+    logger.info('🛑 正在关闭服务...');
 
-    // 停止抓取器
-    this.scraperManager.stopAll();
+    try {
+      // 1. 停止抓取器并登出所有账号
+      logger.info('1️⃣ 停止抓取器并登出账号...');
+      await this.scraperManager.stopAll();
 
-    // 关闭 WebSocket 服务器
-    if (this.wsServer) {
-      this.wsServer.close();
+      // 2. 关闭 WebSocket 服务器
+      logger.info('2️⃣ 关闭 WebSocket 服务器...');
+      if (this.wsServer) {
+        this.wsServer.close();
+      }
+
+      // 3. 关闭 HTTP 服务器
+      logger.info('3️⃣ 关闭 HTTP 服务器...');
+      if (this.httpServer) {
+        await new Promise<void>((resolve) => {
+          if (this.httpServer) {
+            this.httpServer.close(() => resolve());
+          } else {
+            resolve();
+          }
+        });
+      }
+
+      // 4. 删除 PID 文件
+      this.removePidFile();
+
+      logger.info('✅ 服务已安全关闭');
+      process.exit(0);
+    } catch (error: any) {
+      logger.error('❌ 关闭服务时出错:', error.message);
+      this.removePidFile();
+      process.exit(1);
     }
-
-    // 关闭 HTTP 服务器
-    if (this.httpServer) {
-      this.httpServer.close();
-    }
-
-    logger.info('服务已关闭');
-    process.exit(0);
   }
 }
 

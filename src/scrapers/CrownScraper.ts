@@ -211,6 +211,39 @@ export class CrownScraper {
   }
 
   /**
+   * 登出账号
+   */
+  async logout(): Promise<void> {
+    if (!this.isLoggedIn || !this.uid) {
+      logger.debug(`[${this.account.showType}] 未登录，无需登出`);
+      return;
+    }
+
+    try {
+      logger.info(`[${this.account.showType}] 🚪 开始登出...`);
+
+      // 调用登出 API
+      const params = new URLSearchParams({
+        p: 'logout',
+        uid: this.uid,
+        ver: this.version,
+        langx: 'zh-tw',
+      });
+
+      await this.client.post(`/transform.php?ver=${this.version}`, params.toString());
+
+      // 清除登录状态
+      this.isLoggedIn = false;
+      this.uid = '';
+      this.cookies = '';
+
+      logger.info(`[${this.account.showType}] ✅ 登出成功`);
+    } catch (error: any) {
+      logger.error(`[${this.account.showType}] ❌ 登出失败: ${error.message}`);
+    }
+  }
+
+  /**
    * 按类型获取赛事列表（用于轮询模式）
    */
   async fetchMatchesByType(showType: ShowType): Promise<Match[]> {

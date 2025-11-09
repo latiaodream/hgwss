@@ -199,11 +199,35 @@ export class ScraperManager extends EventEmitter {
   /**
    * 停止所有抓取器
    */
-  stopAll(): void {
+  async stopAll(): Promise<void> {
     logger.info('停止所有抓取器...');
+
+    // 停止所有定时任务
     for (const showType of this.scrapers.keys()) {
       this.stop(showType);
     }
+
+    // 停止轮询任务
+    const rotationTimer = this.intervals.get('rotation' as ShowType);
+    if (rotationTimer) {
+      clearInterval(rotationTimer);
+      this.intervals.delete('rotation' as ShowType);
+    }
+
+    // 登出所有账号
+    logger.info('登出所有账号...');
+    const logoutPromises: Promise<void>[] = [];
+
+    for (const scraper of this.scrapers.values()) {
+      logoutPromises.push(scraper.logout());
+    }
+
+    if (this.sharedScraper) {
+      logoutPromises.push(this.sharedScraper.logout());
+    }
+
+    await Promise.all(logoutPromises);
+    logger.info('✅ 所有账号已登出');
   }
 
   /**

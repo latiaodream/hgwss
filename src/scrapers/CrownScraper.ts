@@ -130,9 +130,19 @@ export class CrownScraper {
   async login(): Promise<boolean> {
     try {
       logger.info(`[${this.account.showType}] 开始登录账号: ${this.account.username}`);
+      logger.info(`[${this.account.showType}] API 地址: ${this.client.defaults.baseURL}`);
+
+      // 先访问首页获取初始 Cookie
+      try {
+        logger.debug(`[${this.account.showType}] 访问首页获取 Cookie...`);
+        await this.client.get('/app/member/FT_browse/index.php?rtype=r&langx=zh-tw');
+      } catch (error: any) {
+        logger.warn(`[${this.account.showType}] 访问首页失败: ${error.message}`);
+      }
 
       // 获取版本号
       await this.getVersion();
+      logger.info(`[${this.account.showType}] 使用版本号: ${this.version}`);
 
       // 获取 BlackBox
       const blackbox = await this.getBlackBox();
@@ -154,10 +164,18 @@ export class CrownScraper {
         userAgent: encodedUA,
       });
 
+      logger.debug(`[${this.account.showType}] 发送登录请求...`);
+      logger.debug(`[${this.account.showType}] 请求 URL: /transform.php?ver=${this.version}`);
+      logger.debug(`[${this.account.showType}] 请求参数: p=${params.get('p')}, langx=${params.get('langx')}, username=${params.get('username')}`);
+
       const response = await this.client.post(`/transform.php?ver=${this.version}`, params.toString());
+
+      logger.debug(`[${this.account.showType}] 响应状态码: ${response.status}`);
+      logger.debug(`[${this.account.showType}] 响应数据 (前 500 字符): ${response.data.substring(0, 500)}`);
+
       const data = await this.parseXmlResponse(response.data);
 
-      logger.debug(`[${this.account.showType}] 登录响应:`, {
+      logger.info(`[${this.account.showType}] 登录响应:`, {
         status: data.status,
         msg: data.msg,
         username: data.username,
@@ -165,18 +183,22 @@ export class CrownScraper {
       });
 
       // 检查登录是否成功
-      if (data.msg === '100' || data.status === 'success') {
+      if (data.msg === '100' || data.msg === '109' || data.status === 'success') {
         this.isLoggedIn = true;
         this.uid = data.uid;
         this.cookies = response.headers['set-cookie']?.join('; ') || '';
-        logger.info(`[${this.account.showType}] 登录成功，UID: ${this.uid}`);
+        logger.info(`[${this.account.showType}] ✅ 登录成功，UID: ${this.uid}`);
         return true;
       }
 
-      logger.error(`[${this.account.showType}] 登录失败: ${data.msg || data.err}`);
+      logger.error(`[${this.account.showType}] ❌ 登录失败: ${data.msg || data.err || '未知错误'}`);
       return false;
     } catch (error: any) {
-      logger.error(`[${this.account.showType}] 登录异常:`, error.message);
+      logger.error(`[${this.account.showType}] ❌ 登录异常: ${error.message}`);
+      if (error.response) {
+        logger.error(`[${this.account.showType}] 响应状态码: ${error.response.status}`);
+        logger.error(`[${this.account.showType}] 响应数据: ${JSON.stringify(error.response.data).substring(0, 500)}`);
+      }
       return false;
     }
   }

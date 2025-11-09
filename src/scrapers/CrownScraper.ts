@@ -48,8 +48,6 @@ export class CrownScraper {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': userAgent,
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Origin': this.baseUrl,
-        'Referer': `${this.baseUrl}/`,
       },
     });
 
@@ -80,9 +78,6 @@ export class CrownScraper {
         if (this.cookies) {
           config.headers['Cookie'] = this.cookies;
         }
-        // 同步 Origin/Referer 为当前 baseUrl
-        config.headers['Origin'] = this.baseUrl;
-        config.headers['Referer'] = `${this.baseUrl}/`;
         return config;
       },
       (error) => {
@@ -90,6 +85,23 @@ export class CrownScraper {
       }
     );
   }
+
+  /**
+   * 统一的 transform.php 请求（带 404/405 回退到无 ver 参数路径）
+   */
+  private async postTransform(body: string, config: any = {}): Promise<any> {
+    try {
+      return await this.client.post(`/transform.php?ver=${this.version}`, body, config);
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 404 || status === 405) {
+        logger.warn(`[${this.account.showType}] transform.php?ver= 返回 ${status}，改用 /transform.php 重试`);
+        return await this.client.post(`/transform.php`, body, config);
+      }
+      throw err;
+    }
+  }
+
 
 
   /**
@@ -269,7 +281,7 @@ export class CrownScraper {
 
         const url = `/transform.php?ver=${this.version}`;
         logger.debug(`[${this.account.showType}] 🔄 尝试登录: POST ${this.baseUrl}${url}`);
-        const response = await this.client.post(url, params.toString());
+        const response = await this.postTransform(params.toString());
         const data = await this.parseXmlResponse(response.data);
 
         const loginResponse = data as any;
@@ -351,7 +363,7 @@ export class CrownScraper {
         langx: 'zh-tw',
       });
 
-      await this.client.post(`/transform.php?ver=${this.version}`, params.toString());
+      await this.postTransform(params.toString());
 
       // 清除登录状态
       this.isLoggedIn = false;
@@ -423,7 +435,7 @@ export class CrownScraper {
         rtype: showTypeParam.rtype,
       });
 
-      const response = await this.client.post(`/transform.php?ver=${this.version}`, params.toString(), {
+      const response = await this.postTransform(params.toString(), {
         headers: {
           'Cookie': this.cookies,
         },
@@ -488,7 +500,7 @@ export class CrownScraper {
         chose_team: 'H',
       });
 
-      const response = await this.client.post(`/transform.php?ver=${this.version}`, params.toString(), {
+      const response = await this.postTransform(params.toString(), {
         headers: {
           'Cookie': this.cookies,
         },

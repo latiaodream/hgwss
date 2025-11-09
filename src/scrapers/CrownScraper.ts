@@ -1,5 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import * as https from 'https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 
 import { AccountConfig, Match, ShowType, Markets } from '../types';
 import logger from '../utils/logger';
@@ -35,10 +37,13 @@ export class CrownScraper {
 
     const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
 
+    // 代理支持
+    const proxyAgent = this.createProxyAgent();
+
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
-      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      httpsAgent: proxyAgent || new https.Agent({ rejectUnauthorized: false }),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': userAgent,
@@ -84,6 +89,31 @@ export class CrownScraper {
         return Promise.reject(error);
       }
     );
+  }
+
+
+  /**
+   * 创建代理 Agent（支持 HTTP/HTTPS/SOCKS5）
+   */
+  private createProxyAgent(): any {
+    const proxyUrl = process.env.CROWN_PROXY_URL;
+    if (!proxyUrl) return null;
+
+    try {
+      if (proxyUrl.startsWith('socks://') || proxyUrl.startsWith('socks5://')) {
+        logger.info(`[${this.account.showType}] 使用 SOCKS5 代理: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
+        return new SocksProxyAgent(proxyUrl);
+      } else if (proxyUrl.startsWith('http://') || proxyUrl.startsWith('https://')) {
+        logger.info(`[${this.account.showType}] 使用 HTTP(S) 代理: ${proxyUrl.replace(/:[^:@]+@/, ':***@')}`);
+        return new HttpsProxyAgent(proxyUrl, { rejectUnauthorized: false } as any);
+      } else {
+        logger.warn(`[${this.account.showType}] 不支持的代理协议: ${proxyUrl}`);
+        return null;
+      }
+    } catch (err: any) {
+      logger.error(`[${this.account.showType}] 创建代理 Agent 失败: ${err?.message || err}`);
+      return null;
+    }
   }
 
   /**
@@ -145,6 +175,8 @@ export class CrownScraper {
   private async getVersion(): Promise<void> {
     // 依次在 siteUrl 候选上尝试获取版本号
     const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+    const proxyAgent = this.createProxyAgent();
+
     for (let i = 0; i < this.siteUrlCandidates.length; i++) {
       const url = this.siteUrlCandidates[i];
       try {
@@ -154,7 +186,7 @@ export class CrownScraper {
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
           },
           timeout: 15000,
-          httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+          httpsAgent: proxyAgent || new https.Agent({ rejectUnauthorized: false }),
           validateStatus: (s) => s >= 200 && s < 500,
         });
         const html = resp.data || '';

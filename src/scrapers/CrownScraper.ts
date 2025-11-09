@@ -14,21 +14,31 @@ export class CrownScraper {
   private cookies: string = '';
   private uid: string = '';
   private version: string = '';
+  private baseUrl: string = '';
+  private baseUrlCandidates: string[] = [];
+  private candidateIndex: number = 0;
 
   constructor(account: AccountConfig) {
     this.account = account;
 
-    const baseURL = process.env.CROWN_API_BASE_URL || 'https://hga038.com';
+    this.baseUrlCandidates = this.resolveBaseUrlCandidates();
+    this.baseUrl = this.baseUrlCandidates[0] || (process.env.CROWN_API_BASE_URL || 'https://hga038.com');
+
     const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
 
     this.client = axios.create({
-      baseURL,
+      baseURL: this.baseUrl,
       timeout: 30000,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': userAgent,
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Origin': this.baseUrl,
+        'Referer': `${this.baseUrl}/`,
       },
     });
+
+    logger.info(`[${this.account.showType}] 使用基础域名: ${this.baseUrl}`);
 
     // 添加响应拦截器来自动保存 Cookie
     this.client.interceptors.response.use(
@@ -55,12 +65,51 @@ export class CrownScraper {
         if (this.cookies) {
           config.headers['Cookie'] = this.cookies;
         }
+        // 同步 Origin/Referer 为当前 baseUrl
+        config.headers['Origin'] = this.baseUrl;
+        config.headers['Referer'] = `${this.baseUrl}/`;
         return config;
       },
       (error) => {
         return Promise.reject(error);
       }
     );
+  }
+
+  /**
+   * 解析基础 URL 候选
+   */
+  private resolveBaseUrlCandidates(): string[] {
+    // 优先 candidates env
+    const candidatesEnv = process.env.CROWN_API_BASE_URL_CANDIDATES;
+    const fromEnvCandidates = candidatesEnv ? candidatesEnv.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    // 单个 base url
+    const singleBase = process.env.CROWN_API_BASE_URL ? [process.env.CROWN_API_BASE_URL.trim()] : [];
+
+    // 内置备用域名
+    const builtins = [
+      'https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga038.com','https://hga039.com','https://hga050.com',
+      'https://mos011.com','https://mos022.com','https://mos033.com','https://mos055.com','https://mos066.com','https://mos100.com'
+    ];
+
+    // 合并去重，保持顺序：singleBase -> fromEnvCandidates -> builtins
+    const all = [...singleBase, ...fromEnvCandidates, ...builtins];
+    const uniq: string[] = [];
+    for (const url of all) {
+      if (url && !uniq.includes(url)) uniq.push(url);
+    }
+    return uniq.length ? uniq : ['https://hga038.com'];
+  }
+
+  /**
+   * 切换到下一个可用域名
+   */
+  private switchToNextBaseUrl(): void {
+    this.candidateIndex = (this.candidateIndex + 1) % this.baseUrlCandidates.length;
+    this.baseUrl = this.baseUrlCandidates[this.candidateIndex];
+    this.client.defaults.baseURL = this.baseUrl;
+    logger.warn(`[${this.account.showType}] 切换基础域名 -> ${this.baseUrl}`);
   }
 
   /**
@@ -128,86 +177,101 @@ export class CrownScraper {
    * 登录皇冠账号
    */
   async login(): Promise<boolean> {
-    try {
-      logger.info(`[${this.account.showType}] 🔐 开始登录: ${this.account.username}`);
+    // 按候选域名循环尝试登录
+    for (let attempt = 0; attempt < this.baseUrlCandidates.length; attempt++) {
+      try {
+        logger.info(`[${this.account.showType}] 🔐 开始登录: ${this.account.username} @ ${this.baseUrl}`);
 
-      // 获取最新版本号
-      await this.getVersion();
+        // 访问首页预热（拿 Cookie）
+        try {
+          await this.client.get('/');
+        } catch (_) { /* 忽略 */ }
 
-      // 获取 BlackBox
-      const blackbox = await this.getBlackBox();
+        // 获取最新版本号
+        await this.getVersion();
 
-      // Base64 编码 UserAgent
-      const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
-      const encodedUA = Buffer.from(userAgent).toString('base64');
+        // 获取 BlackBox
+        const blackbox = await this.getBlackBox();
 
-      // 构建请求参数
-      const params = new URLSearchParams({
-        p: 'chk_login',
-        langx: 'zh-tw',  // 使用繁体中文版本
-        ver: this.version,
-        username: this.account.username,
-        password: this.account.password,
-        app: 'N',
-        auto: 'CFHFID',
-        blackbox,
-        userAgent: encodedUA,
-      });
+        // Base64 编码 UserAgent
+        const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+        const encodedUA = Buffer.from(userAgent).toString('base64');
 
-      logger.debug(`[${this.account.showType}] 🔄 尝试登录...`);
-      const response = await this.client.post(`/transform.php?ver=${this.version}`, params.toString());
-      const data = await this.parseXmlResponse(response.data);
+        // 构建请求参数
+        const params = new URLSearchParams({
+          p: 'chk_login',
+          langx: 'zh-tw',  // 使用繁体中文版本
+          ver: this.version,
+          username: this.account.username,
+          password: this.account.password,
+          app: 'N',
+          auto: 'CFHFID',
+          blackbox,
+          userAgent: encodedUA,
+        });
 
-      const loginResponse = data as any;
-      logger.info(`[${this.account.showType}] 📥 登录响应:`, {
-        status: loginResponse.status,
-        msg: loginResponse.msg,
-        username: loginResponse.username,
-        uid: loginResponse.uid,
-      });
+        const url = `/transform.php?ver=${this.version}`;
+        logger.debug(`[${this.account.showType}] 🔄 尝试登录: POST ${this.baseUrl}${url}`);
+        const response = await this.client.post(url, params.toString());
+        const data = await this.parseXmlResponse(response.data);
 
-      // msg=100 或 109 表示登录成功
-      if (loginResponse.msg === '100' && loginResponse.status !== 'success') {
-        loginResponse.status = 'success';
-      }
+        const loginResponse = data as any;
+        logger.info(`[${this.account.showType}] 📥 登录响应:`, {
+          status: loginResponse.status,
+          msg: loginResponse.msg,
+          username: loginResponse.username,
+          uid: loginResponse.uid,
+        });
 
-      if (loginResponse.status === 'success' || loginResponse.msg === '100' || loginResponse.msg === '109') {
-        this.isLoggedIn = true;
-        this.uid = loginResponse.uid;
-        logger.info(`[${this.account.showType}] ✅ 登录成功，UID: ${this.uid}`);
-        return true;
-      }
+        if (loginResponse.msg === '100' && loginResponse.status !== 'success') {
+          loginResponse.status = 'success';
+        }
 
-      // 检查是否需要修改密码
-      if (loginResponse.msg === '109') {
-        logger.warn(`[${this.account.showType}] ⚠️ 需要修改密码`);
+        if (loginResponse.status === 'success' || loginResponse.msg === '100' || loginResponse.msg === '109') {
+          this.isLoggedIn = true;
+          this.uid = loginResponse.uid;
+          logger.info(`[${this.account.showType}] ✅ 登录成功，UID: ${this.uid}, baseUrl: ${this.baseUrl}`);
+          return true;
+        }
+
+        if (loginResponse.msg === '109') {
+          logger.warn(`[${this.account.showType}] ⚠️ 需要修改密码`);
+          return false;
+        }
+
+        logger.error(`[${this.account.showType}] ❌ 登录失败: ${loginResponse.msg || loginResponse.err || '未知错误'}`);
+        return false;
+      } catch (error: any) {
+        const status = error?.response?.status;
+        const code = error?.code;
+        const errorMsg = error?.message || String(error);
+        logger.error(`[${this.account.showType}] ❌ 登录异常: ${errorMsg} @ ${this.baseUrl}`);
+        if (status) logger.error(`[${this.account.showType}] 响应状态码: ${status}`);
+        if (error?.response?.statusText) logger.error(`[${this.account.showType}] 响应状态文本: ${error.response.statusText}`);
+
+        const responseData = error?.response?.data;
+        if (responseData) {
+          if (typeof responseData === 'string') {
+            logger.error(`[${this.account.showType}] 响应数据: ${responseData.substring(0, 500)}`);
+          } else {
+            logger.error(`[${this.account.showType}] 响应数据: ${JSON.stringify(responseData).substring(0, 500)}`);
+          }
+        }
+        if (code) logger.error(`[${this.account.showType}] 错误代码: ${code}`);
+
+        // 遇到 404/405/502/503 之类，切换下一个域名再试
+        if ([404, 405, 502, 503].includes(status)) {
+          this.switchToNextBaseUrl();
+          continue;
+        }
+
+        // 其他错误不再重试
         return false;
       }
-
-      logger.error(`[${this.account.showType}] ❌ 登录失败: ${loginResponse.msg || loginResponse.err || '未知错误'}`);
-      return false;
-    } catch (error: any) {
-      const errorMsg = error.message || String(error);
-      logger.error(`[${this.account.showType}] ❌ 登录异常: ${errorMsg}`);
-
-      if (error.response) {
-        logger.error(`[${this.account.showType}] 响应状态码: ${error.response.status}`);
-        logger.error(`[${this.account.showType}] 响应状态文本: ${error.response.statusText || ''}`);
-
-        const responseData = error.response.data;
-        if (typeof responseData === 'string') {
-          logger.error(`[${this.account.showType}] 响应数据: ${responseData.substring(0, 500)}`);
-        } else {
-          logger.error(`[${this.account.showType}] 响应数据: ${JSON.stringify(responseData)}`);
-        }
-      }
-
-      if (error.code) {
-        logger.error(`[${this.account.showType}] 错误代码: ${error.code}`);
-      }
-
-      return false;
     }
+
+    // 所有候选都失败
+    return false;
   }
 
   /**

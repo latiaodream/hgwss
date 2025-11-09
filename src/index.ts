@@ -5,6 +5,7 @@ import { AccountConfig } from './types';
 import logger from './utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
 
 // 加载环境变量
 dotenv.config();
@@ -15,6 +16,7 @@ dotenv.config();
 class Application {
   private scraperManager: ScraperManager;
   private wsServer?: WSServer;
+  private httpServer?: http.Server;
 
   constructor() {
     this.scraperManager = new ScraperManager();
@@ -50,9 +52,14 @@ class Application {
     const wsPort = parseInt(process.env.WS_PORT || '8080');
     this.wsServer = new WSServer(wsPort, this.scraperManager);
 
+    // 启动 HTTP 服务器（用于展示页面）
+    const httpPort = parseInt(process.env.HTTP_PORT || '10089');
+    this.startHttpServer(httpPort);
+
     logger.info('='.repeat(60));
     logger.info('✅ 服务启动成功');
     logger.info(`📡 WebSocket 服务器: ws://localhost:${wsPort}`);
+    logger.info(`🌐 HTTP 服务器: http://localhost:${httpPort}/matches`);
     logger.info(`🔑 认证令牌: ${process.env.WS_AUTH_TOKEN || 'default-token'}`);
     logger.info('='.repeat(60));
   }
@@ -107,6 +114,36 @@ class Application {
   }
 
   /**
+   * 启动 HTTP 服务器
+   */
+  private startHttpServer(port: number): void {
+    this.httpServer = http.createServer((req, res) => {
+      // 处理 /matches 路径
+      if (req.url === '/matches' || req.url === '/matches.html') {
+        const filePath = path.join(process.cwd(), 'public', 'matches.html');
+
+        fs.readFile(filePath, (err, data) => {
+          if (err) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('404 Not Found');
+            return;
+          }
+
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(data);
+        });
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('404 Not Found');
+      }
+    });
+
+    this.httpServer.listen(port, () => {
+      logger.info(`HTTP 服务器启动在端口 ${port}`);
+    });
+  }
+
+  /**
    * 优雅关闭
    */
   async shutdown(): Promise<void> {
@@ -118,6 +155,11 @@ class Application {
     // 关闭 WebSocket 服务器
     if (this.wsServer) {
       this.wsServer.close();
+    }
+
+    // 关闭 HTTP 服务器
+    if (this.httpServer) {
+      this.httpServer.close();
     }
 
     logger.info('服务已关闭');

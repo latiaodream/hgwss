@@ -127,19 +127,22 @@ export class CrownScraper {
     // 单个 base url
     const singleBase = process.env.CROWN_API_BASE_URL ? [process.env.CROWN_API_BASE_URL.trim()] : [];
 
-    // 内置备用域名
+    // 如果明确配置了 CROWN_API_BASE_URL 或 CROWN_API_BASE_URL_CANDIDATES，则不使用内置备用域名
+    if (singleBase.length > 0 || fromEnvCandidates.length > 0) {
+      const all = [...singleBase, ...fromEnvCandidates];
+      const uniq: string[] = [];
+      for (const url of all) {
+        if (url && !uniq.includes(url)) uniq.push(url);
+      }
+      return uniq.length ? uniq : ['https://hga026.com'];
+    }
+
+    // 内置备用域名（仅在未配置环境变量时使用）
     const builtins = [
       'https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga038.com','https://hga039.com','https://hga050.com',
       'https://mos011.com','https://mos022.com','https://mos033.com','https://mos055.com','https://mos066.com','https://mos100.com'
     ];
-
-    // 合并去重，保持顺序：singleBase -> fromEnvCandidates -> builtins
-    const all = [...singleBase, ...fromEnvCandidates, ...builtins];
-    const uniq: string[] = [];
-    for (const url of all) {
-      if (url && !uniq.includes(url)) uniq.push(url);
-    }
-    return uniq.length ? uniq : ['https://hga038.com'];
+    return builtins;
   }
 
   /**
@@ -158,14 +161,21 @@ export class CrownScraper {
   private resolveSiteUrlCandidates(): string[] {
     const single = process.env.CROWN_SITE_URL ? [process.env.CROWN_SITE_URL.trim()] : [];
     const envs = process.env.CROWN_SITE_URL_CANDIDATES ? process.env.CROWN_SITE_URL_CANDIDATES.split(',').map(s=>s.trim()).filter(Boolean) : [];
+
+    // 如果明确配置了 CROWN_SITE_URL 或 CROWN_SITE_URL_CANDIDATES，则不使用内置备用域名
+    if (single.length > 0 || envs.length > 0) {
+      const all = [...single, ...envs];
+      const uniq: string[] = [];
+      for (const u of all) { if (u && !uniq.includes(u)) uniq.push(u); }
+      return uniq.length ? uniq : [this.baseUrl];
+    }
+
+    // 内置备用域名（仅在未配置环境变量时使用）
     const builtins = [
-      'https://hga038.com','https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga039.com','https://hga050.com',
+      'https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga038.com','https://hga039.com','https://hga050.com',
       'https://mos011.com','https://mos022.com','https://mos033.com','https://mos055.com','https://mos066.com','https://mos100.com'
     ];
-    const all = [...single, ...envs, ...builtins];
-    const uniq: string[] = [];
-    for (const u of all) { if (u && !uniq.includes(u)) uniq.push(u); }
-    return uniq.length ? uniq : [this.baseUrl];
+    return builtins;
   }
 
 

@@ -17,12 +17,19 @@ export class CrownScraper {
   private baseUrl: string = '';
   private baseUrlCandidates: string[] = [];
   private candidateIndex: number = 0;
+  private siteUrl: string = '';
+  private siteUrlCandidates: string[] = [];
+  private siteIndex: number = 0;
 
   constructor(account: AccountConfig) {
     this.account = account;
 
     this.baseUrlCandidates = this.resolveBaseUrlCandidates();
     this.baseUrl = this.baseUrlCandidates[0] || (process.env.CROWN_API_BASE_URL || 'https://hga038.com');
+
+    // Site URL 候选
+    this.siteUrlCandidates = this.resolveSiteUrlCandidates();
+    this.siteUrl = this.siteUrlCandidates[0] || this.baseUrl;
 
     const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
 
@@ -113,30 +120,55 @@ export class CrownScraper {
   }
 
   /**
+   * 解析 Site URL 候选
+   */
+  private resolveSiteUrlCandidates(): string[] {
+    const single = process.env.CROWN_SITE_URL ? [process.env.CROWN_SITE_URL.trim()] : [];
+    const envs = process.env.CROWN_SITE_URL_CANDIDATES ? process.env.CROWN_SITE_URL_CANDIDATES.split(',').map(s=>s.trim()).filter(Boolean) : [];
+    const builtins = [
+      'https://hga038.com','https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga039.com','https://hga050.com',
+      'https://mos011.com','https://mos022.com','https://mos033.com','https://mos055.com','https://mos066.com','https://mos100.com'
+    ];
+    const all = [...single, ...envs, ...builtins];
+    const uniq: string[] = [];
+    for (const u of all) { if (u && !uniq.includes(u)) uniq.push(u); }
+    return uniq.length ? uniq : [this.baseUrl];
+  }
+
+
+  /**
    * 获取版本号
    */
   private async getVersion(): Promise<void> {
-    try {
-      const response = await this.client.get('/');
-      const html = response.data;
-      const match = html.match(/top\.ver\s*=\s*'([^']+)'/);
-      if (match) {
-        this.version = match[1];
-        logger.debug(`[${this.account.showType}] 获取版本号: ${this.version}`);
-      } else {
-        // 尝试其他匹配模式
-        const match2 = html.match(/ver=([^&"']+)/);
-        if (match2) {
-          this.version = match2[1];
-          logger.debug(`[${this.account.showType}] 获取版本号: ${this.version}`);
-        } else {
-          throw new Error('未找到版本号');
+    // 依次在 siteUrl 候选上尝试获取版本号
+    const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+    for (let i = 0; i < this.siteUrlCandidates.length; i++) {
+      const url = this.siteUrlCandidates[i];
+      try {
+        const resp = await axios.get(`${url}/`, {
+          headers: {
+            'User-Agent': userAgent,
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          },
+          timeout: 15000,
+        });
+        const html = resp.data || '';
+        const m1 = html.match(/top\.ver\s*=\s*'([^']+)'/);
+        const m2 = m1 ? null : html.match(/ver=([^&"']+)/);
+        const ver = (m1?.[1] || m2?.[1])?.trim();
+        if (ver) {
+          this.version = ver;
+          this.siteUrl = url;
+          logger.debug(`[${this.account.showType}] 获取版本号成功: ${this.version} @ ${this.siteUrl}`);
+          return;
         }
+      } catch (e: any) {
+        logger.warn(`[${this.account.showType}] 获取版本号失败 @ ${url}: ${e?.message || e}`);
+        continue;
       }
-    } catch (error: any) {
-      logger.warn(`[${this.account.showType}] 获取版本号失败，使用默认值`);
-      this.version = '2025-10-16-fix342_120';
     }
+    logger.warn(`[${this.account.showType}] 获取版本号失败，使用默认值`);
+    this.version = '2025-10-16-fix342_120';
   }
 
   /**

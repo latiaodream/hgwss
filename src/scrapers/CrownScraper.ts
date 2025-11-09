@@ -87,19 +87,41 @@ export class CrownScraper {
   }
 
   /**
-   * 统一的 transform.php 请求（带 404/405 回退到无 ver 参数路径）
+   * 统一的 transform.php 请求
+   * 404/405 时按以下路径依次回退：
+   * 1) /transform.php?ver=...
+   * 2) /transform.php
+   * 3) /app/member/transform.php?ver=...
+   * 4) /app/member/transform.php
    */
   private async postTransform(body: string, config: any = {}): Promise<any> {
-    try {
-      return await this.client.post(`/transform.php?ver=${this.version}`, body, config);
-    } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 404 || status === 405) {
-        logger.warn(`[${this.account.showType}] transform.php?ver= 返回 ${status}，改用 /transform.php 重试`);
-        return await this.client.post(`/transform.php`, body, config);
+    const paths = [
+      `/transform.php?ver=${this.version}`,
+      `/transform.php`,
+      `/app/member/transform.php?ver=${this.version}`,
+      `/app/member/transform.php`,
+    ];
+
+    let lastErr: any = null;
+
+    for (const path of paths) {
+      try {
+        logger.debug(`[${this.account.showType}] POST ${path}`);
+        return await this.client.post(path, body, config);
+      } catch (err: any) {
+        lastErr = err;
+        const status = err?.response?.status;
+        if (status === 404 || status === 405) {
+          logger.warn(`[${this.account.showType}] ${path} 返回 ${status}，尝试下一个路径`);
+          continue;
+        }
+        // 其他错误不再回退，直接抛出
+        throw err;
       }
-      throw err;
     }
+
+    // 所有路径都失败，抛出最后一个错误
+    throw lastErr || new Error('All transform.php paths failed');
   }
 
 

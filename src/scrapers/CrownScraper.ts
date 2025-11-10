@@ -621,48 +621,83 @@ export class CrownScraper {
 
     try {
       const isLive = match.showType === 'live';
-      const params = new URLSearchParams({
-        p: 'get_game_more',
-        uid: this.uid,
-        ver: this.version,
-        langx: 'zh-cn',
-        gtype: 'FT',
-        showtype: isLive ? 'live' : (match.showType === 'today' ? 'today' : 'early'),
-        ltype: '3',
-        isRB: isLive ? 'Y' : 'N',
-        gid: match.gid,
-        from: 'game_more',
-        mode: 'NORMAL',
-        filter: 'All',
-      });
-
       const lid = match.lid || match.raw?.game?.LID || match.raw?.game?.lid || match.raw?.LID || match.raw?.lid;
-      if (lid) {
-        params.set('lid', String(lid));
+      const ecid =
+        match.raw?.game?.ECID ||
+        match.raw?.game?.ecid ||
+        match.raw?.league?.ECID ||
+        match.raw?.league?.ecid ||
+        match.raw?.ECID ||
+        match.raw?.ecid;
+
+      const attempts = [
+        { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn' },
+        { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn' },
+        { label: 'ecid only zh-cn', useEcid: true, useGid: false, includeLid: false, langx: 'zh-cn' },
+        { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn' },
+        { label: 'gid only zh-tw', useEcid: false, useGid: true, includeLid: false, langx: 'zh-tw' },
+      ];
+
+      for (const attempt of attempts) {
+        const params = new URLSearchParams({
+          uid: this.uid,
+          ver: this.version,
+          langx: attempt.langx || 'zh-cn',
+          p: 'get_game_more',
+          gtype: 'FT',
+          showtype: isLive ? 'live' : match.showType,
+          ltype: '3',
+          isRB: isLive ? 'Y' : 'N',
+          from: 'game_more',
+          mode: 'NORMAL',
+          filter: 'All',
+          ts: Date.now().toString(),
+        });
+
+        if (attempt.includeLid !== false && lid) {
+          params.set('lid', String(lid));
+        }
+        if (attempt.useEcid && ecid) {
+          params.set('ecid', String(ecid));
+        }
+        if (attempt.useGid !== false) {
+          params.set('gid', match.gid);
+        }
+
+        const response = await this.postTransform(params.toString(), {
+          headers: {
+            'Cookie': this.cookies,
+          },
+        });
+
+        const risk = this.detectRiskResponse(response.data);
+        if (risk) {
+          this.handleRiskyResponse(risk, `get_game_more/${match.showType}`);
+          return null;
+        }
+
+        const text = typeof response.data === 'string' ? response.data : '';
+        if (!text || !text.includes('<game')) {
+          continue;
+        }
+
+        let parsed;
+        try {
+          parsed = await this.parseXmlResponse(response.data);
+        } catch (error: any) {
+          logger.warn(`[${this.account.showType}] 解析 get_game_more XML 失败 (GID: ${match.gid}): ${error?.message || error}`);
+          continue;
+        }
+
+        const serverResponse = parsed?.serverresponse || parsed;
+        const markets = this.parseMoreMarkets(serverResponse);
+        if (markets) {
+          return markets;
+        }
       }
 
-      const response = await this.postTransform(params.toString(), {
-        headers: {
-          'Cookie': this.cookies,
-        },
-      });
-
-      const risk = this.detectRiskResponse(response.data);
-      if (risk) {
-        this.handleRiskyResponse(risk, `get_game_more/${match.showType}`);
-        return null;
-      }
-
-      let parsed;
-      try {
-        parsed = await this.parseXmlResponse(response.data);
-      } catch (error: any) {
-        logger.warn(`[${this.account.showType}] 解析 get_game_more XML 失败 (GID: ${match.gid}): ${error?.message || error}`);
-        return null;
-      }
-      const serverResponse = parsed?.serverresponse || parsed;
-      const markets = this.parseMoreMarkets(serverResponse);
-      return markets;
+      logger.warn(`[${this.account.showType}] get_game_more 多次尝试仍未获取到盘口 (GID: ${match.gid})`);
+      return null;
     } catch (error: any) {
       logger.warn(`[${this.account.showType}] 获取更多盘口失败 (GID: ${match.gid}): ${error.message}`);
       return null;
@@ -997,15 +1032,54 @@ export class CrownScraper {
         half: { handicapLines: [], overUnderLines: [] },
       };
 
+      const pickString = (obj: any, keys: string[]): string | undefined => {
+        if (!obj) return undefined;
+        for (const key of keys) {
+          const variants = [key, key.toLowerCase(), key.toUpperCase()];
+          for (const variant of variants) {
+            const value = obj[variant];
+            if (value !== undefined && value !== null && value !== '') {
+              return String(value).trim();
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const isCardOrCornerMarket = (game: any): boolean => {
+        const mode = pickString(game, ['@_mode', 'mode']);
+        if (mode && ['CN', 'RN'].includes(mode.toUpperCase())) {
+          return true;
+        }
+
+        const ptype = pickString(game, ['@_ptype', 'ptype']);
+        if (ptype && /(角球|罰牌|罚牌)/.test(ptype)) {
+          return true;
+        }
+
+        const teamH = pickString(game, ['TEAM_H', 'team_h', 'TEAM_H_CN', 'team_h_cn']);
+        const teamC = pickString(game, ['TEAM_C', 'team_c', 'TEAM_C_CN', 'team_c_cn']);
+        const combined = `${teamH || ''}${teamC || ''}`;
+        if (/(角球|罰牌|罚牌)/.test(combined)) {
+          return true;
+        }
+
+        return false;
+      };
+
       for (const game of games) {
+        if (!game) continue;
+        if (isCardOrCornerMarket(game)) continue;
+
         // 全场让球盘口
-        const ratioR = game.ratio || game.RATIO || game.RATIO_RE;
-        const iorRH = game.ior_RH || game.IOR_RH;
-        const iorRC = game.ior_RC || game.IOR_RC;
+        const ratioR = pickString(game, ['RE', 'R', 'ratio']);
+        const iorRH = pickString(game, ['ior_REH', 'ior_RH']);
+        const iorRC = pickString(game, ['ior_REC', 'ior_RC']);
 
         if (ratioR && (iorRH || iorRC)) {
           const hdp = this.parseHandicap(ratioR);
           if (hdp !== null) {
+            markets.full!.handicapLines = markets.full!.handicapLines || [];
             markets.full!.handicapLines!.push({
               hdp,
               home: this.parseOddsValue(iorRH) || 0,
@@ -1015,13 +1089,14 @@ export class CrownScraper {
         }
 
         // 全场大小球盘口
-        const ratioO = game.ratio_o || game.ratio_u || game.RATIO_O || game.RATIO_U;
-        const iorOUH = game.ior_OUH || game.IOR_OUH;
-        const iorOUC = game.ior_OUC || game.IOR_OUC;
+        const ratioO = pickString(game, ['ROU', 'OU', 'ratio_o', 'ratio_u']);
+        const iorOUH = pickString(game, ['ior_ROUH', 'ior_OUH']);
+        const iorOUC = pickString(game, ['ior_ROUC', 'ior_OUC']);
 
         if (ratioO && (iorOUH || iorOUC)) {
           const hdp = this.parseHandicap(ratioO);
           if (hdp !== null) {
+            markets.full!.overUnderLines = markets.full!.overUnderLines || [];
             markets.full!.overUnderLines!.push({
               hdp,
               over: this.parseOddsValue(iorOUC) || 0,
@@ -1031,13 +1106,14 @@ export class CrownScraper {
         }
 
         // 半场让球盘口
-        const ratioHR = game.hratio || game.HRATIO || game.RATIO_HR;
-        const iorHRH = game.ior_HRH || game.IOR_HRH;
-        const iorHRC = game.ior_HRC || game.IOR_HRC;
+        const ratioHR = pickString(game, ['HRE', 'HR', 'hratio']);
+        const iorHRH = pickString(game, ['ior_HREH', 'ior_HRH']);
+        const iorHRC = pickString(game, ['ior_HREC', 'ior_HRC']);
 
         if (ratioHR && (iorHRH || iorHRC)) {
           const hdp = this.parseHandicap(ratioHR);
           if (hdp !== null) {
+            markets.half!.handicapLines = markets.half!.handicapLines || [];
             markets.half!.handicapLines!.push({
               hdp,
               home: this.parseOddsValue(iorHRH) || 0,
@@ -1047,13 +1123,14 @@ export class CrownScraper {
         }
 
         // 半场大小球盘口
-        const ratioHO = game.ratio_ho || game.ratio_hu || game.RATIO_HO || game.RATIO_HU;
-        const iorHOUH = game.ior_HOUH || game.IOR_HOUH;
-        const iorHOUC = game.ior_HOUC || game.IOR_HOUC;
+        const ratioHO = pickString(game, ['HROU', 'HOU', 'hratio_o', 'hratio_u']);
+        const iorHOUH = pickString(game, ['ior_HROUH', 'ior_HOUH']);
+        const iorHOUC = pickString(game, ['ior_HROUC', 'ior_HOUC']);
 
         if (ratioHO && (iorHOUH || iorHOUC)) {
           const hdp = this.parseHandicap(ratioHO);
           if (hdp !== null) {
+            markets.half!.overUnderLines = markets.half!.overUnderLines || [];
             markets.half!.overUnderLines!.push({
               hdp,
               over: this.parseOddsValue(iorHOUC) || 0,

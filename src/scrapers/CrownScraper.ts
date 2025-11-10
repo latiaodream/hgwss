@@ -29,7 +29,13 @@ export class CrownScraper {
   private suspendedUntil: number = 0;
   private suspensionReason: string = '';
   private lastSuspensionLog?: { context: string; time: number };
+  private lastLoginTs?: number;
   private enableMoreMarkets: boolean;
+  private moreMarketsStartDelayMs: number;
+  private moreMarketsIntervalMs: number;
+  private lastMoreMarketTs: number = 0;
+  private maxConcurrentMoreMarkets: number;
+  private inflightMoreMarkets = 0;
 
   constructor(account: AccountConfig) {
     this.account = account;
@@ -78,6 +84,9 @@ export class CrownScraper {
     );
 
     this.enableMoreMarkets = this.resolveMoreMarketsFlag();
+    this.moreMarketsStartDelayMs = this.resolveStartDelay();
+    this.moreMarketsIntervalMs = this.resolveThrottleInterval();
+    this.maxConcurrentMoreMarkets = this.resolveConcurrentLimit();
 
     // 添加请求拦截器来自动发送 Cookie
     this.client.interceptors.request.use(
@@ -354,6 +363,7 @@ export class CrownScraper {
         if (loginResponse.status === 'success' || loginResponse.msg === '100' || loginResponse.msg === '109') {
           this.isLoggedIn = true;
           this.uid = loginResponse.uid;
+          this.lastLoginTs = Date.now();
           logger.info(`[${this.account.showType}] ✅ 登录成功，UID: ${this.uid}, baseUrl: ${this.baseUrl}`);
           return true;
         }
@@ -577,6 +587,21 @@ export class CrownScraper {
         break;
       }
 
+      const now = Date.now();
+      if (this.moreMarketsStartDelayMs > 0 && now - (this.lastLoginTs || 0) < this.moreMarketsStartDelayMs) {
+        logger.debug(`[${this.account.showType}] 多盘口延迟期内，跳过 ${match.gid}`);
+        continue;
+      }
+
+      if (this.inflightMoreMarkets >= this.maxConcurrentMoreMarkets) {
+        break;
+      }
+
+      const diff = now - this.lastMoreMarketTs;
+      if (diff < this.moreMarketsIntervalMs) {
+        await new Promise(resolve => setTimeout(resolve, this.moreMarketsIntervalMs - diff));
+      }
+
       const moreMarkets = await this.fetchMoreMarkets(match);
       if (moreMarkets) {
         match.markets = this.mergeMarkets(match.markets || {}, moreMarkets);
@@ -631,6 +656,7 @@ export class CrownScraper {
     }
 
     try {
+      this.inflightMoreMarkets++;
       const isLive = match.showType === 'live';
       const lid = match.lid || match.raw?.game?.LID || match.raw?.game?.lid || match.raw?.LID || match.raw?.lid;
       const ecid =
@@ -641,13 +667,7 @@ export class CrownScraper {
         match.raw?.ECID ||
         match.raw?.ecid;
 
-      const attempts = [
-        { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn' },
-        { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn' },
-        { label: 'ecid only zh-cn', useEcid: true, useGid: false, includeLid: false, langx: 'zh-cn' },
-        { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn' },
-        { label: 'gid only zh-tw', useEcid: false, useGid: true, includeLid: false, langx: 'zh-tw' },
-      ];
+      const attempts = this.buildMoreMarketAttempts(ecid, lid);
 
       for (const attempt of attempts) {
         const params = new URLSearchParams({
@@ -681,6 +701,8 @@ export class CrownScraper {
           },
         });
 
+        this.lastMoreMarketTs = Date.now();
+
         const risk = this.detectRiskResponse(response.data);
         if (risk) {
           this.handleRiskyResponse(risk, `get_game_more/${match.showType}`);
@@ -712,6 +734,8 @@ export class CrownScraper {
     } catch (error: any) {
       logger.warn(`[${this.account.showType}] 获取更多盘口失败 (GID: ${match.gid}): ${error.message}`);
       return null;
+    } finally {
+      this.inflightMoreMarkets = Math.max(0, this.inflightMoreMarkets - 1);
     }
   }
 
@@ -1333,6 +1357,57 @@ export class CrownScraper {
     }
   }
 
+  private buildMoreMarketAttempts(ecid?: any, lid?: any): Array<{
+    label: string;
+    useEcid?: boolean;
+    useGid?: boolean;
+    includeLid?: boolean;
+    langx?: string;
+  }> {
+    const base: Array<{
+      label: string;
+      useEcid?: boolean;
+      useGid?: boolean;
+      includeLid?: boolean;
+      langx?: string;
+    }> = [
+      { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn' },
+      { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn' },
+      { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn' },
+    ];
+
+    if (ecid) {
+      base.push({ label: 'ecid only zh-cn', useEcid: true, useGid: false, includeLid: false, langx: 'zh-cn' });
+    }
+
+    base.push({ label: 'gid only zh-tw', useEcid: false, useGid: true, includeLid: false, langx: 'zh-tw' });
+
+    return base;
+  }
+
+  private resolveStartDelay(): number {
+    const raw = Number(process.env.MORE_MARKETS_START_DELAY_SECONDS || '0');
+    if (Number.isFinite(raw) && raw > 0) {
+      return raw * 1000;
+    }
+    return 0;
+  }
+
+  private resolveThrottleInterval(): number {
+    const raw = Number(process.env.MORE_MARKETS_INTERVAL_MS || '400');
+    if (Number.isFinite(raw) && raw >= 0) {
+      return raw;
+    }
+    return 400;
+  }
+
+  private resolveConcurrentLimit(): number {
+    const raw = Number(process.env.MORE_MARKETS_MAX_CONCURRENCY || '1');
+    if (Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    return 1;
+  }
   /**
    * 检查是否已登录
    */

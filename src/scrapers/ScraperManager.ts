@@ -58,6 +58,24 @@ export class ScraperManager extends EventEmitter {
   async startAll(): Promise<void> {
     logger.info('启动所有抓取器...');
 
+    // 先尝试登出所有账号（清除之前可能残留的会话）
+    logger.info('🔄 清除之前的登录会话...');
+    const logoutPromises: Promise<void>[] = [];
+
+    for (const scraper of this.scrapers.values()) {
+      logoutPromises.push(scraper.logout());
+    }
+
+    if (this.sharedScraper) {
+      logoutPromises.push(this.sharedScraper.logout());
+    }
+
+    await Promise.all(logoutPromises);
+    logger.info('✅ 之前的登录会话已清除');
+
+    // 等待一下，确保登出完成
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     // 检查是否所有账号都相同
     const accounts = Array.from(this.scrapers.values()).map(s => (s as any).account);
     const allSameAccount = accounts.every(acc =>

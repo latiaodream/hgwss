@@ -399,27 +399,35 @@ export class CrownScraper {
       return;
     }
 
+    const uid = this.uid;
+
     try {
-      logger.info(`[${this.account.showType}] 🚪 开始登出...`);
+      logger.info(`[${this.account.showType}] 🚪 开始登出 (UID: ${uid})...`);
 
-      // 调用登出 API
-      const params = new URLSearchParams({
-        p: 'logout',
-        uid: this.uid,
-        ver: this.version,
-        langx: 'zh-tw',
-      });
+      // 尝试调用登出 API（可能不存在，但尝试一下）
+      try {
+        const params = new URLSearchParams({
+          p: 'logout',
+          uid: uid,
+          ver: this.version,
+          langx: 'zh-tw',
+        });
 
-      await this.postTransform(params.toString());
+        await this.postTransform(params.toString());
+        logger.info(`[${this.account.showType}] ✅ 登出 API 调用成功`);
+      } catch (apiError: any) {
+        // 登出 API 可能不存在或返回 404，这是正常的
+        logger.warn(`[${this.account.showType}] ⚠️ 登出 API 调用失败（可能不存在）: ${apiError.message}`);
+      }
 
-      // 清除登录状态
+    } catch (error: any) {
+      logger.error(`[${this.account.showType}] ❌ 登出过程出错: ${error.message}`);
+    } finally {
+      // 无论 API 调用是否成功，都清除本地登录状态
       this.isLoggedIn = false;
       this.uid = '';
       this.cookies = '';
-
-      logger.info(`[${this.account.showType}] ✅ 登出成功`);
-    } catch (error: any) {
-      logger.error(`[${this.account.showType}] ❌ 登出失败: ${error.message}`);
+      logger.info(`[${this.account.showType}] ✅ 本地登录状态已清除`);
     }
   }
 

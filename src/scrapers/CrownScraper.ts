@@ -862,7 +862,7 @@ export class CrownScraper {
     }
 
     // 全场大小球 - 主盘口
-    const ratioO = pick(['ratio_o', 'ratio_u', 'RATIO_O']);
+    const ratioO = pick(['ratio_o', 'ratio_u', 'ratio_ouo', 'ratio_ouu', 'RATIO_O', 'RATIO_OUO', 'RATIO_OUU']);
     const ratioOUH = pick(['ior_OUH', 'IOR_OUH']);
     const ratioOUC = pick(['ior_OUC', 'IOR_OUC']);
 
@@ -919,7 +919,7 @@ export class CrownScraper {
     }
 
     // 半场大小球 - 主盘口
-    const ratioHO = pick(['ratio_ho', 'ratio_hu', 'RATIO_HO']);
+    const ratioHO = pick(['ratio_ho', 'ratio_hu', 'ratio_houo', 'ratio_houu', 'RATIO_HO', 'RATIO_HOUO', 'RATIO_HOUU']);
     const ratioHOUH = pick(['ior_HOUH', 'IOR_HOUH']);
     const ratioHOUC = pick(['ior_HOUC', 'IOR_HOUC']);
 
@@ -1045,8 +1045,22 @@ export class CrownScraper {
    */
   private parseHandicap(value: any): number | null {
     if (!value || value === '-') return null;
-    const num = parseFloat(value);
-    return isNaN(num) ? null : num;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    const str = String(value).trim();
+    if (!str) return null;
+
+    if (str.includes('/')) {
+      const parts = str.split('/').map((p) => parseFloat(p));
+      const valid = parts.filter((n) => Number.isFinite(n));
+      if (!valid.length) return null;
+      return valid.reduce((sum, num) => sum + num, 0) / valid.length;
+    }
+
+    const num = parseFloat(str);
+    return Number.isNaN(num) ? null : num;
   }
 
   /**

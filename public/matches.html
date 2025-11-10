@@ -9,20 +9,20 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
+            background: #f0f2f5;
+            padding: 15px;
         }
         
         .header {
             background: white;
-            padding: 20px;
+            padding: 15px 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
         .header h1 {
-            font-size: 24px;
+            font-size: 20px;
             margin-bottom: 10px;
         }
         
@@ -30,11 +30,12 @@
             display: flex;
             gap: 20px;
             align-items: center;
+            font-size: 13px;
         }
         
         .status-dot {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: #ccc;
         }
@@ -51,17 +52,18 @@
         
         .tabs {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 8px;
+            margin-bottom: 15px;
         }
         
         .tab {
-            padding: 10px 20px;
+            padding: 8px 16px;
             background: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            font-size: 13px;
         }
         
         .tab.active {
@@ -71,108 +73,176 @@
         
         .match-card {
             background: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
         
         .match-header {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             margin-bottom: 10px;
-            padding-bottom: 10px;
+            padding-bottom: 8px;
             border-bottom: 1px solid #f0f0f0;
         }
         
-        .teams {
+        .league-info {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin: 15px 0;
-        }
-        
-        .team {
-            flex: 1;
-            text-align: center;
-        }
-        
-        .team-name {
-            font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 5px;
-        }
-        
-        .score {
-            font-size: 24px;
-            font-weight: bold;
-            color: #1890ff;
-            margin: 0 20px;
-        }
-        
-        .vs {
-            font-size: 14px;
-            color: #999;
-            margin: 0 20px;
-        }
-        
-        .markets {
-            display: grid;
-            gap: 10px;
-            margin-top: 15px;
-        }
-        
-        .market {
-            background: #f9f9f9;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        
-        .market-title {
+            gap: 8px;
             font-size: 12px;
             color: #666;
-            margin-bottom: 8px;
         }
         
-        .odds-row {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .odds-item {
-            flex: 1;
-            background: white;
-            padding: 8px;
-            border-radius: 4px;
-            text-align: center;
-        }
-        
-        .odds-label {
+        .match-time {
             font-size: 11px;
             color: #999;
-        }
-        
-        .odds-value {
-            font-size: 14px;
-            font-weight: 500;
-            margin-top: 4px;
         }
         
         .state-badge {
             padding: 2px 8px;
-            border-radius: 4px;
+            border-radius: 3px;
             font-size: 11px;
-        }
-        
-        .state-live {
+            font-weight: 500;
             background: #fff1f0;
             color: #cf1322;
+        }
+        
+        .match-body {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+        }
+        
+        .teams-section {
+            flex: 0 0 180px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .team-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .team-name {
+            font-size: 13px;
+            font-weight: 500;
+            flex: 1;
+        }
+        
+        .team-score {
+            font-size: 15px;
+            font-weight: bold;
+            color: #ff4d4f;
+            min-width: 25px;
+            text-align: center;
+        }
+        
+        .markets-section {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 4px 0;
+        }
+        
+        .market-group {
+            flex: 0 0 auto;
+            min-width: 260px;
+            background: #fafafa;
+            border-radius: 4px;
+            padding: 8px;
+        }
+        
+        .market-title {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 6px;
+            text-align: center;
+            font-weight: 500;
+        }
+        
+        .odds-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+        }
+        
+        .odds-grid.two-col {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .odd-item {
+            background: white;
+            border: 1px solid #e8e8e8;
+            border-radius: 3px;
+            padding: 6px 4px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        
+        .odd-item:hover {
+            background: #1890ff;
+            border-color: #1890ff;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(24,144,255,0.3);
+        }
+        
+        .odd-item:hover .odd-label,
+        .odd-item:hover .odd-value,
+        .odd-item:hover .hdp-value {
+            color: white;
+        }
+        
+        .odd-label {
+            font-size: 10px;
+            color: #999;
+            margin-bottom: 2px;
+        }
+        
+        .odd-value {
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .hdp-value {
+            font-size: 10px;
+            color: #ff4d4f;
+            font-weight: 600;
+            margin-bottom: 2px;
         }
         
         .empty {
             text-align: center;
             padding: 60px;
             color: #999;
+            font-size: 14px;
+        }
+        
+        .markets-section::-webkit-scrollbar {
+            height: 5px;
+        }
+        
+        .markets-section::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        
+        .markets-section::-webkit-scrollbar-thumb {
+            background: #bbb;
+            border-radius: 3px;
+        }
+        
+        .markets-section::-webkit-scrollbar-thumb:hover {
+            background: #999;
         }
     </style>
 </head>
@@ -203,12 +273,10 @@
         let currentType = 'live';
         let matches = { live: [], today: [], early: [] };
 
-        // 自动检测 WebSocket 地址
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname;
-        const wsPort = '8080';  // WebSocket 服务器端口
-        const WS_URL = `${protocol}//${host}:${wsPort}`;
-        const AUTH_TOKEN = 'your-token-here';  // 请在服务器上修改为实际 Token
+        const host = window.location.host;
+        const WS_URL = `${protocol}//${host}/ws`;
+        const AUTH_TOKEN = 'latiaolatiaozhurenzhuren';
 
         function connect() {
             ws = new WebSocket(WS_URL);
@@ -217,17 +285,18 @@
                 document.getElementById('statusDot').classList.add('connected');
                 document.getElementById('statusText').textContent = '已连接';
                 
-                ws.send(JSON.stringify({ type: 'auth', token: AUTH_TOKEN }));
-                ws.send(JSON.stringify({ type: 'subscribe', showTypes: ['live', 'today', 'early'] }));
+                ws.send(JSON.stringify({ type: 'auth', data: { token: AUTH_TOKEN } }));
+                ws.send(JSON.stringify({ type: 'subscribe', data: { showTypes: ['live', 'today', 'early'] } }));
             };
 
             ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+                const msg = JSON.parse(event.data);
                 
-                if (data.type === 'full_data') {
-                    matches[data.showType] = data.matches;
+                if (msg.type === 'full_data') {
+                    const { showType, matches: matchList } = msg.data;
+                    matches[showType] = matchList;
                     updateCounts();
-                    if (data.showType === currentType) renderMatches();
+                    if (showType === currentType) renderMatches();
                 }
             };
 
@@ -261,51 +330,147 @@
             container.innerHTML = list.map(m => `
                 <div class="match-card">
                     <div class="match-header">
-                        <span>${m.league_zh || m.league}</span>
-                        <span>${m.state === 1 ? '<span class="state-badge state-live">进行中</span>' : ''}</span>
-                    </div>
-                    <div class="teams">
-                        <div class="team">
-                            <div class="team-name">${m.home_zh || m.home}</div>
+                        <div class="league-info">
+                            <span>${m.league_zh || m.league}</span>
+                            ${m.match_time ? `<span class="match-time">${m.match_time}</span>` : ''}
                         </div>
-                        ${m.state === 1 ? 
-                            `<div class="score">${m.home_score || 0} : ${m.away_score || 0}</div>` :
-                            `<div class="vs">VS</div>`
-                        }
-                        <div class="team">
-                            <div class="team-name">${m.away_zh || m.away}</div>
-                        </div>
+                        ${m.state === 1 ? '<span class="state-badge">进行中</span>' : ''}
                     </div>
-                    ${m.markets ? renderMarkets(m.markets) : ''}
+                    <div class="match-body">
+                        <div class="teams-section">
+                            <div class="team-row">
+                                <div class="team-name">${m.home_zh || m.home}</div>
+                                ${m.state === 1 ? `<div class="team-score">${m.home_score || 0}</div>` : ''}
+                            </div>
+                            <div class="team-row">
+                                <div class="team-name">${m.away_zh || m.away}</div>
+                                ${m.state === 1 ? `<div class="team-score">${m.away_score || 0}</div>` : ''}
+                            </div>
+                        </div>
+                        ${m.markets ? renderMarkets(m.markets) : ''}
+                    </div>
                 </div>
             `).join('');
         }
 
         function renderMarkets(markets) {
-            let html = '<div class="markets">';
-            
-            if (markets.moneyline) {
+            let html = '<div class="markets-section">';
+
+            // 独赢
+            if (markets.moneyline && (markets.moneyline.home || markets.moneyline.draw || markets.moneyline.away)) {
                 html += `
-                    <div class="market">
-                        <div class="market-title">独赢</div>
-                        <div class="odds-row">
-                            <div class="odds-item">
-                                <div class="odds-label">主胜</div>
-                                <div class="odds-value">${markets.moneyline.home?.toFixed(2) || '-'}</div>
+                    <div class="market-group">
+                        <div class="market-title">独赢(1/2/X)</div>
+                        <div class="odds-grid">
+                            <div class="odd-item">
+                                <div class="odd-label">主胜</div>
+                                <div class="odd-value">${markets.moneyline.home?.toFixed(2) || '-'}</div>
                             </div>
-                            <div class="odds-item">
-                                <div class="odds-label">平局</div>
-                                <div class="odds-value">${markets.moneyline.draw?.toFixed(2) || '-'}</div>
+                            <div class="odd-item">
+                                <div class="odd-label">平局</div>
+                                <div class="odd-value">${markets.moneyline.draw?.toFixed(2) || '-'}</div>
                             </div>
-                            <div class="odds-item">
-                                <div class="odds-label">客胜</div>
-                                <div class="odds-value">${markets.moneyline.away?.toFixed(2) || '-'}</div>
+                            <div class="odd-item">
+                                <div class="odd-label">客胜</div>
+                                <div class="odd-value">${markets.moneyline.away?.toFixed(2) || '-'}</div>
                             </div>
                         </div>
                     </div>
                 `;
             }
-            
+
+            // 全场让球
+            if (markets.full && markets.full.handicapLines && markets.full.handicapLines.length > 0) {
+                markets.full.handicapLines.forEach(line => {
+                    html += `
+                        <div class="market-group">
+                            <div class="market-title">让球(1/2)</div>
+                            <div class="odds-grid two-col">
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp > 0 ? '+' : ''}${line.hdp.toFixed(2)}</div>
+                                    <div class="odd-label">主队</div>
+                                    <div class="odd-value">${line.home?.toFixed(2) || '-'}</div>
+                                </div>
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp < 0 ? '+' : ''}${(-line.hdp).toFixed(2)}</div>
+                                    <div class="odd-label">客队</div>
+                                    <div class="odd-value">${line.away?.toFixed(2) || '-'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // 全场大小
+            if (markets.full && markets.full.overUnderLines && markets.full.overUnderLines.length > 0) {
+                markets.full.overUnderLines.forEach(line => {
+                    html += `
+                        <div class="market-group">
+                            <div class="market-title">大小(O/U)</div>
+                            <div class="odds-grid two-col">
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp.toFixed(2)}</div>
+                                    <div class="odd-label">大</div>
+                                    <div class="odd-value">${line.over?.toFixed(2) || '-'}</div>
+                                </div>
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp.toFixed(2)}</div>
+                                    <div class="odd-label">小</div>
+                                    <div class="odd-value">${line.under?.toFixed(2) || '-'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // 半场让球
+            if (markets.half && markets.half.handicapLines && markets.half.handicapLines.length > 0) {
+                markets.half.handicapLines.forEach(line => {
+                    html += `
+                        <div class="market-group">
+                            <div class="market-title">让球(半场)</div>
+                            <div class="odds-grid two-col">
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp > 0 ? '+' : ''}${line.hdp.toFixed(2)}</div>
+                                    <div class="odd-label">主队</div>
+                                    <div class="odd-value">${line.home?.toFixed(2) || '-'}</div>
+                                </div>
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp < 0 ? '+' : ''}${(-line.hdp).toFixed(2)}</div>
+                                    <div class="odd-label">客队</div>
+                                    <div class="odd-value">${line.away?.toFixed(2) || '-'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // 半场大小
+            if (markets.half && markets.half.overUnderLines && markets.half.overUnderLines.length > 0) {
+                markets.half.overUnderLines.forEach(line => {
+                    html += `
+                        <div class="market-group">
+                            <div class="market-title">大小(半场)</div>
+                            <div class="odds-grid two-col">
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp.toFixed(2)}</div>
+                                    <div class="odd-label">大</div>
+                                    <div class="odd-value">${line.over?.toFixed(2) || '-'}</div>
+                                </div>
+                                <div class="odd-item">
+                                    <div class="hdp-value">${line.hdp.toFixed(2)}</div>
+                                    <div class="odd-label">小</div>
+                                    <div class="odd-value">${line.under?.toFixed(2) || '-'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
             html += '</div>';
             return html;
         }

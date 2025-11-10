@@ -514,11 +514,7 @@ export class CrownScraper {
 
       const matches = this.parseMatches(data);
 
-      // 为每场赛事获取更多盘口（限制前10场，避免请求过多）
-      const matchesToEnrich = matches.slice(0, 10);
-      await this.enrichMatchesWithMoreMarkets(matchesToEnrich);
-
-      logger.info(`[${this.account.showType}] 抓取到 ${matches.length} 场赛事，已获取 ${matchesToEnrich.length} 场的多盘口数据`);
+      logger.info(`[${this.account.showType}] 抓取到 ${matches.length} 场赛事`);
 
       return matches;
     } catch (error: any) {
@@ -533,90 +529,7 @@ export class CrownScraper {
     }
   }
 
-  /**
-   * 为赛事获取更多盘口数据
-   */
-  private async enrichMatchesWithMoreMarkets(matches: Match[]): Promise<void> {
-    for (const match of matches) {
-      try {
-        const moreMarkets = await this.fetchMoreMarkets(match.gid);
-        if (moreMarkets) {
-          // 合并多盘口数据
-          if (moreMarkets.full) {
-            if (moreMarkets.full.handicapLines && moreMarkets.full.handicapLines.length > 0) {
-              match.markets = match.markets || {};
-              match.markets.full = match.markets.full || { handicapLines: [], overUnderLines: [] };
-              match.markets.full.handicapLines = moreMarkets.full.handicapLines;
-            }
-            if (moreMarkets.full.overUnderLines && moreMarkets.full.overUnderLines.length > 0) {
-              match.markets = match.markets || {};
-              match.markets.full = match.markets.full || { handicapLines: [], overUnderLines: [] };
-              match.markets.full.overUnderLines = moreMarkets.full.overUnderLines;
-            }
-          }
-          if (moreMarkets.half) {
-            if (moreMarkets.half.handicapLines && moreMarkets.half.handicapLines.length > 0) {
-              match.markets = match.markets || {};
-              match.markets.half = match.markets.half || { handicapLines: [], overUnderLines: [] };
-              match.markets.half.handicapLines = moreMarkets.half.handicapLines;
-            }
-            if (moreMarkets.half.overUnderLines && moreMarkets.half.overUnderLines.length > 0) {
-              match.markets = match.markets || {};
-              match.markets.half = match.markets.half || { handicapLines: [], overUnderLines: [] };
-              match.markets.half.overUnderLines = moreMarkets.half.overUnderLines;
-            }
-          }
-        }
-      } catch (error: any) {
-        logger.warn(`[${this.account.showType}] 获取赛事 ${match.gid} 的多盘口失败: ${error.message}`);
-      }
-    }
-  }
 
-  /**
-   * 获取更多盘口数据
-   */
-  private async fetchMoreMarkets(gid: string): Promise<Markets | null> {
-    try {
-      const timestamp = Date.now().toString();
-      const showTypeParam = this.getShowTypeParam();
-
-      const params = new URLSearchParams({
-        uid: this.uid,
-        ver: this.version,
-        langx: 'zh-cn',
-        p: 'get_game_more',
-        gtype: 'ft',
-        showtype: showTypeParam.showtype,
-        ltype: '3',
-        isRB: this.account.showType === 'live' ? 'Y' : 'N',
-        ecid: gid,
-        specialClick: '',
-        mode: 'NORMAL',
-        from: 'game_more',
-        filter: 'All',
-        ts: timestamp,
-      });
-
-      const response = await this.postTransform(params.toString(), {
-        headers: {
-          'Cookie': this.cookies,
-        },
-      });
-
-      const data = await this.parseXmlResponse(response.data);
-
-      if (!data || !data.game) {
-        return null;
-      }
-
-      // 解析多盘口数据
-      return this.parseMoreMarkets(data);
-    } catch (error: any) {
-      logger.debug(`[${this.account.showType}] 获取更多盘口失败: ${error.message}`);
-      return null;
-    }
-  }
 
   /**
    * 获取单场赛事的详细赔率

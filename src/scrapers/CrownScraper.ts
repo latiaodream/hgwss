@@ -534,7 +534,10 @@ export class CrownScraper {
   private async enrichMatchesWithMoreMarkets(matches: Match[]): Promise<void> {
     if (!Array.isArray(matches) || matches.length === 0) return;
 
-    const maxCount = this.account.showType === 'live' ? 30 : 15;
+    const defaultLimit = this.account.showType === 'live' ? 30 : 15;
+    const limitEnv = process.env.MORE_MARKETS_LIMIT;
+    const limit = limitEnv ? Number(limitEnv) : defaultLimit;
+    const maxCount = Number.isFinite(limit) && limit > 0 ? limit : defaultLimit;
     const targets = matches.slice(0, maxCount);
 
     for (const match of targets) {
@@ -589,21 +592,25 @@ export class CrownScraper {
     }
 
     try {
+      const isLive = match.showType === 'live';
       const params = new URLSearchParams({
         p: 'get_game_more',
         uid: this.uid,
         ver: this.version,
         langx: 'zh-cn',
         gtype: 'FT',
-        showtype: match.showType === 'live' ? 'live' : (match.showType === 'today' ? 'today' : 'early'),
+        showtype: isLive ? 'live' : (match.showType === 'today' ? 'today' : 'early'),
         ltype: '3',
-        isRB: match.showType === 'live' ? 'Y' : 'N',
+        isRB: isLive ? 'Y' : 'N',
         gid: match.gid,
+        from: 'game_more',
+        mode: 'NORMAL',
         filter: 'All',
       });
 
-      if (match.lid) {
-        params.set('lid', match.lid);
+      const lid = match.lid || match.raw?.game?.LID || match.raw?.game?.lid || match.raw?.LID || match.raw?.lid;
+      if (lid) {
+        params.set('lid', String(lid));
       }
 
       const response = await this.postTransform(params.toString(), {

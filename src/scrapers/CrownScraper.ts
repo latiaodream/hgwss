@@ -28,6 +28,7 @@ export class CrownScraper {
   private siteIndex: number = 0;
   private suspendedUntil: number = 0;
   private suspensionReason: string = '';
+  private lastSuspensionLog?: { context: string; time: number };
 
   constructor(account: AccountConfig) {
     this.account = account;
@@ -566,6 +567,11 @@ export class CrownScraper {
     const targets = matches.slice(0, maxCount);
 
     for (const match of targets) {
+      if (this.isSuspended()) {
+        logger.warn(`[${this.account.showType}] 账号冷却中，跳过更多盘口抓取`);
+        break;
+      }
+
       const moreMarkets = await this.fetchMoreMarkets(match);
       if (moreMarkets) {
         match.markets = this.mergeMarkets(match.markets || {}, moreMarkets);
@@ -1179,6 +1185,20 @@ export class CrownScraper {
     return Number.isNaN(num) ? null : num;
   }
 
+  isSuspended(): boolean {
+    if (!this.suspendedUntil) return false;
+    return Date.now() < this.suspendedUntil;
+  }
+
+  getSuspensionInfo(): { reason: string; until: number } | null {
+    if (!this.isSuspended()) return null;
+    return { reason: this.suspensionReason, until: this.suspendedUntil };
+  }
+
+  getAccountLabel(): string {
+    return this.account.username;
+  }
+
   private shouldSkipBecauseSuspended(context: string): boolean {
     if (!this.suspendedUntil) {
       return false;
@@ -1192,9 +1212,16 @@ export class CrownScraper {
     }
 
     const secondsLeft = Math.ceil((this.suspendedUntil - now) / 1000);
-    logger.warn(
-      `[${this.account.showType}] 账号冷却中 (${this.suspensionReason || '未知原因'})，剩余 ${secondsLeft}s，跳过 ${context}`
-    );
+    const shouldLog =
+      !this.lastSuspensionLog ||
+      this.lastSuspensionLog.context !== context ||
+      now - this.lastSuspensionLog.time > 5000;
+    if (shouldLog) {
+      logger.warn(
+        `[${this.account.showType}] 账号冷却中 (${this.suspensionReason || '未知原因'})，剩余 ${secondsLeft}s，跳过 ${context}`
+      );
+      this.lastSuspensionLog = { context, time: now };
+    }
     return true;
   }
 

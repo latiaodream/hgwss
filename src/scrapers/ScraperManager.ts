@@ -199,6 +199,13 @@ export class ScraperManager extends EventEmitter {
    */
   private async fetchType(showType: ShowType): Promise<void> {
     if (!this.sharedScraper) return;
+    if (this.sharedScraper.isSuspended()) {
+      const info = this.sharedScraper.getSuspensionInfo();
+      logger.warn(
+        `[${showType}] 共享账号冷却中 (${info?.reason || '未知原因'})，暂停抓取`
+      );
+      return;
+    }
 
     try {
       // 使用共享抓取器抓取数据
@@ -331,6 +338,17 @@ export class ScraperManager extends EventEmitter {
     const status = this.status.get(showType)!;
 
     if (!scraper) return;
+    if (scraper.isSuspended()) {
+      const info = scraper.getSuspensionInfo();
+      logger.warn(
+        `[${showType}] 当前账号 ${scraper.getAccountLabel()} 冷却中 (${info?.reason || '未知原因'})`
+      );
+
+      const rotated = await this.rotateAccountForShowType(showType, { skipRest: true });
+      if (!rotated) {
+        return;
+      }
+    }
 
     try {
       logger.debug(`[${showType}] 开始抓取...`);
@@ -452,7 +470,9 @@ export class ScraperManager extends EventEmitter {
 
       const intervalMs = this.rotationIntervalMinutes * 60 * 1000;
       const timer = setInterval(() => {
-        this.rotateAccountForShowType(showType);
+        this.rotateAccountForShowType(showType).catch(error =>
+          logger.error(`[${showType}] 定时轮换失败: ${error?.message || error}`)
+        );
       }, intervalMs);
 
       this.rotationTimers.set(showType, timer);
@@ -462,21 +482,24 @@ export class ScraperManager extends EventEmitter {
     }
   }
 
-  private async rotateAccountForShowType(showType: ShowType): Promise<void> {
+  private async rotateAccountForShowType(
+    showType: ShowType,
+    options?: { skipRest?: boolean }
+  ): Promise<boolean> {
     if (this.rotating.has(showType)) {
-      return;
+      return false;
     }
 
     const pool = this.accountPools.get(showType);
     if (!pool || pool.length <= 1) {
-      return;
+      return false;
     }
 
     this.rotating.add(showType);
 
     try {
       const nextIndex = this.getNextAccountIndex(showType);
-      if (nextIndex === null) return;
+      if (nextIndex === null) return false;
 
       logger.info(`[${showType}] 正在轮换账号，目标: ${pool[nextIndex].username}`);
 
@@ -491,7 +514,9 @@ export class ScraperManager extends EventEmitter {
         }
       }
 
-      const restMs = Math.max(0, this.rotationRestMinutes) * 60 * 1000;
+      const restMs = options?.skipRest
+        ? 0
+        : Math.max(0, this.rotationRestMinutes) * 60 * 1000;
       if (restMs > 0) {
         logger.info(`[${showType}] 进入冷却 ${this.rotationRestMinutes} 分钟后切换账号`);
         await new Promise(resolve => setTimeout(resolve, restMs));
@@ -504,8 +529,10 @@ export class ScraperManager extends EventEmitter {
 
       await this.start(showType);
       logger.info(`[${showType}] 账号切换完成 -> ${nextAccount.username}`);
+      return true;
     } catch (error: any) {
       logger.error(`[${showType}] 账号轮换失败: ${error?.message || error}`);
+      return false;
     } finally {
       this.rotating.delete(showType);
     }

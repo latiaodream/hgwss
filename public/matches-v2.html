@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>皇冠赛事中心</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            padding: 10px;
+            font-size: 12px;
+        }
+        
+        .header {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .status {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        
+        .status-dot.connected {
+            background: #52c41a;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+        
+        .tab {
+            padding: 6px 14px;
+            background: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .tab.active {
+            background: #1890ff;
+            color: white;
+        }
+        
+        .match-card {
+            background: white;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        
+        .match-main {
+            display: flex;
+            padding: 10px;
+        }
+        
+        .match-info {
+            flex: 0 0 200px;
+            padding-right: 10px;
+            border-right: 1px solid #f0f0f0;
+        }
+        
+        .league {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 4px;
+        }
+        
+        .teams {
+            margin: 6px 0;
+        }
+        
+        .team {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 0;
+            font-size: 13px;
+        }
+        
+        .team-name {
+            flex: 1;
+        }
+        
+        .score {
+            font-weight: 600;
+            color: #ff4d4f;
+            min-width: 20px;
+            text-align: right;
+        }
+        
+        .match-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+        
+        .markets {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 0 10px;
+        }
+        
+        .markets::-webkit-scrollbar {
+            height: 4px;
+        }
+        
+        .markets::-webkit-scrollbar-thumb {
+            background: #ddd;
+            border-radius: 2px;
+        }
+        
+        .market {
+            flex: 0 0 auto;
+            min-width: 100px;
+        }
+        
+        .market-title {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+        
+        .market-grid {
+            display: grid;
+            gap: 4px;
+        }
+        
+        .market-grid.three-col {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .market-grid.two-col {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .odds-btn {
+            background: #fafafa;
+            border: 1px solid #e8e8e8;
+            border-radius: 3px;
+            padding: 6px 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        
+        .odds-btn:hover {
+            background: #e6f7ff;
+            border-color: #1890ff;
+        }
+        
+        .odds-label {
+            font-size: 10px;
+            color: #999;
+            display: block;
+            margin-bottom: 2px;
+        }
+        
+        .odds-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            display: block;
+        }
+        
+        .hdp-label {
+            font-size: 10px;
+            color: #ff4d4f;
+            display: block;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>皇冠赛事中心</h1>
+        <div class="status">
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">连接中...</span>
+            </div>
+            <span id="updateTime">--:--:--</span>
+        </div>
+    </div>
+    
+    <div class="tabs">
+        <button class="tab active" data-type="live">滚球 (<span id="count-live">0</span>)</button>
+        <button class="tab" data-type="today">今日 (<span id="count-today">0</span>)</button>
+        <button class="tab" data-type="early">早盘 (<span id="count-early">0</span>)</button>
+    </div>
+    
+    <div id="matchList"></div>
+    
+    <script>
+        const AUTH_TOKEN = 'latiaolatiaozhurenzhuren';
+        const WS_URL = `wss://${window.location.host}/ws`;
+        
+        let ws = null;
+        let matches = { live: [], today: [], early: [] };
+        let currentType = 'live';
+        
+        // 连接 WebSocket
+        function connect() {
+            ws = new WebSocket(WS_URL);
+            
+            ws.onopen = () => {
+                console.log('✅ WebSocket 连接成功');
+                document.getElementById('statusDot').classList.add('connected');
+                document.getElementById('statusText').textContent = '已连接';
+                
+                ws.send(JSON.stringify({ type: 'auth', data: { token: AUTH_TOKEN } }));
+                ws.send(JSON.stringify({ type: 'subscribe', data: { showTypes: ['live', 'today', 'early'] } }));
+            };
+            
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                console.log('📨 收到消息:', msg.type, msg);
+                
+                if (msg.type === 'full_data') {
+                    const { showType, matches: matchList } = msg.data;
+                    matches[showType] = matchList;
+                    updateCounts();
+                    if (showType === currentType) renderMatches();
+                    updateTime();
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket 错误:', error);
+            };
+            
+            ws.onclose = () => {
+                console.log('🔌 WebSocket 断开，3秒后重连...');
+                document.getElementById('statusDot').classList.remove('connected');
+                document.getElementById('statusText').textContent = '已断开';
+                setTimeout(connect, 3000);
+            };
+        }
+        
+        // 更新赛事数量
+        function updateCounts() {
+            document.getElementById('count-live').textContent = matches.live.length;
+            document.getElementById('count-today').textContent = matches.today.length;
+            document.getElementById('count-early').textContent = matches.early.length;
+        }
+        
+        // 更新时间
+        function updateTime() {
+            const now = new Date();
+            const time = now.toLocaleTimeString('zh-CN', { hour12: false });
+            document.getElementById('updateTime').textContent = time;
+        }
+        
+        // 渲染赛事列表
+        function renderMatches() {
+            const list = document.getElementById('matchList');
+            const matchList = matches[currentType];
+
+            if (!matchList || matchList.length === 0) {
+                list.innerHTML = '<div class="empty-state">暂无赛事</div>';
+                return;
+            }
+
+            list.innerHTML = matchList.map(match => renderMatch(match)).join('');
+        }
+
+        // 渲染单个赛事
+        function renderMatch(match) {
+            const markets = match.markets || {};
+
+            return `
+                <div class="match-card">
+                    <div class="match-main">
+                        <div class="match-info">
+                            <div class="league">${match.league || ''}</div>
+                            <div class="teams">
+                                <div class="team">
+                                    <span class="team-name">${match.homeTeam}</span>
+                                    ${match.homeScore !== undefined ? `<span class="score">${match.homeScore}</span>` : ''}
+                                </div>
+                                <div class="team">
+                                    <span class="team-name">${match.awayTeam}</span>
+                                    ${match.awayScore !== undefined ? `<span class="score">${match.awayScore}</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="match-time">${match.matchTime || ''}</div>
+                        </div>
+
+                        <div class="markets">
+                            ${renderMoneyline(markets.moneyline)}
+                            ${renderHandicap(markets.full)}
+                            ${renderOverUnder(markets.full)}
+                            ${renderHalfHandicap(markets.half)}
+                            ${renderHalfOverUnder(markets.half)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 渲染独赢
+        function renderMoneyline(ml) {
+            if (!ml) return '';
+
+            return `
+                <div class="market">
+                    <div class="market-title">独赢(1/2/X)</div>
+                    <div class="market-grid three-col">
+                        <div class="odds-btn">
+                            <span class="odds-label">主胜</span>
+                            <span class="odds-value">${ml.home || '-'}</span>
+                        </div>
+                        <div class="odds-btn">
+                            <span class="odds-label">平局</span>
+                            <span class="odds-value">${ml.draw || '-'}</span>
+                        </div>
+                        <div class="odds-btn">
+                            <span class="odds-label">客胜</span>
+                            <span class="odds-value">${ml.away || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 渲染让球
+        function renderHandicap(full) {
+            if (!full || !full.handicapLines || full.handicapLines.length === 0) return '';
+
+            const lines = full.handicapLines.map(line => `
+                <div class="market">
+                    <div class="market-title">让球(1/2)</div>
+                    <div class="market-grid two-col">
+                        <div class="odds-btn">
+                            <span class="hdp-label">${line.hdp || '0'}</span>
+                            <span class="odds-value">${line.home || '-'}</span>
+                        </div>
+                        <div class="odds-btn">
+                            <span class="hdp-label">${line.hdp ? -line.hdp : '0'}</span>
+                            <span class="odds-value">${line.away || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            return lines;
+        }
+
+        // 渲染大小球
+        function renderOverUnder(full) {
+            if (!full || !full.overUnderLines || full.overUnderLines.length === 0) return '';
+
+            const lines = full.overUnderLines.map(line => `
+                <div class="market">
+                    <div class="market-title">大小(O/U)</div>
+                    <div class="market-grid two-col">
+                        <div class="odds-btn">
+                            <span class="hdp-label">大 ${line.hdp || '0'}</span>
+                            <span class="odds-value">${line.over || '-'}</span>
+                        </div>
+                        <div class="odds-btn">
+                            <span class="hdp-label">小 ${line.hdp || '0'}</span>
+                            <span class="odds-value">${line.under || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            return lines;
+        }
+
+        // 渲染半场让球
+        function renderHalfHandicap(half) {
+            if (!half || !half.handicapLines || half.handicapLines.length === 0) return '';
+
+            const lines = half.handicapLines.map(line => `
+                <div class="market">
+                    <div class="market-title">让球(半场)</div>
+                    <div class="market-grid two-col">
+                        <div class="odds-btn">
+                            <span class="hdp-label">${line.hdp || '0'}</span>
+                            <span class="odds-value">${line.home || '-'}</span>
+                        </div>
+                        <div class="odds-btn">
+                            <span class="hdp-label">${line.hdp ? -line.hdp : '0'}</span>
+                            <span class="odds-value">${line.away || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            return lines;
+        }
+
+        // 渲染半场大小球
+        function renderHalfOverUnder(half) {
+            if (!half || !half.overUnderLines || half.overUnderLines.length === 0) return '';
+
+            const lines = half.overUnderLines.map(line => `
+                <div class="market">
+                    <div class="market-title">大小(半场)</div>
+                    <div class="market-grid two-col">
+                        <div class="odds-btn">
+                            <span class="hdp-label">大 ${line.hdp || '0'}</span>
+                            <span class="odds-value">${line.over || '-'}</span>
+                        </div>
+                        <div class="odds-btn">
+                            <span class="hdp-label">小 ${line.hdp || '0'}</span>
+                            <span class="odds-value">${line.under || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            return lines;
+        }
+
+        // 标签页切换
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentType = tab.dataset.type;
+                renderMatches();
+            });
+        });
+
+        // 启动
+        connect();
+    </script>
+</body>
+</html>
+

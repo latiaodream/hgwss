@@ -1361,8 +1361,8 @@ export class CrownScraper {
 
     switch (flag) {
       case 'check_emnu':
-        // 忽略 CheckEMNU，只记录日志，不暂停账号
-        logger.warn(
+        // 忽略 CheckEMNU，只在 debug 级别记录，避免日志噪音
+        logger.debug(
           `[${this.account.showType}] 检测到 CheckEMNU 安全校验 (${context})，忽略并继续运行`
         );
         return; // 直接返回，不暂停账号

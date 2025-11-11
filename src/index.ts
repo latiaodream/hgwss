@@ -1,11 +1,15 @@
 import dotenv from 'dotenv';
+import express from 'express';
 import { ScraperManager } from './scrapers/ScraperManager';
 import { WSServer } from './websocket/WSServer';
+import { ThirdPartyManager } from './scrapers/ThirdPartyManager';
 import { AccountConfig, ShowType } from './types';
 import logger from './utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import mappingRouter from './routes/mapping';
+import thirdpartyRouter, { setThirdPartyManager } from './routes/thirdparty';
 
 // 加载环境变量
 dotenv.config();
@@ -15,11 +19,57 @@ dotenv.config();
  */
 class Application {
   private scraperManager: ScraperManager;
+  private thirdPartyManager?: ThirdPartyManager;
   private wsServer?: WSServer;
   private httpServer?: http.Server;
+  private expressApp: express.Application;
 
   constructor() {
     this.scraperManager = new ScraperManager();
+    this.expressApp = express();
+    this.setupExpress();
+  }
+
+  /**
+   * 设置 Express 中间件和路由
+   */
+  private setupExpress(): void {
+    // 解析 JSON 请求体
+    this.expressApp.use(express.json());
+    this.expressApp.use(express.urlencoded({ extended: true }));
+
+    // 静态文件服务
+    this.expressApp.use(express.static(path.join(process.cwd(), 'public')));
+
+    // API 路由
+    this.expressApp.use('/api/mapping', mappingRouter);
+    this.expressApp.use('/api/thirdparty', thirdpartyRouter);
+
+    // 页面路由
+    this.expressApp.get('/', (req, res) => {
+      res.redirect('/matches');
+    });
+
+    this.expressApp.get('/matches', (req, res) => {
+      res.sendFile(path.join(process.cwd(), 'public', 'matches.html'));
+    });
+
+    this.expressApp.get('/matches-v2', (req, res) => {
+      res.sendFile(path.join(process.cwd(), 'public', 'matches-v2.html'));
+    });
+
+    this.expressApp.get('/team-mapping', (req, res) => {
+      res.sendFile(path.join(process.cwd(), 'public', 'team-mapping.html'));
+    });
+
+    this.expressApp.get('/thirdparty-odds', (req, res) => {
+      res.sendFile(path.join(process.cwd(), 'public', 'thirdparty-odds.html'));
+    });
+
+    // 404 处理
+    this.expressApp.use((req, res) => {
+      res.status(404).send('404 Not Found');
+    });
   }
 
   /**
@@ -51,20 +101,50 @@ class Application {
     // 启动抓取器
     await this.scraperManager.startAll();
 
+    // 启动第三方 API 抓取器
+    this.startThirdPartyManager();
+
     // 启动 WebSocket 服务器
     const wsPort = parseInt(process.env.WS_PORT || '8080');
     this.wsServer = new WSServer(wsPort, this.scraperManager);
 
-    // 启动 HTTP 服务器（用于展示页面）
+    // 启动 HTTP 服务器（用于展示页面和 API）
     const httpPort = parseInt(process.env.HTTP_PORT || '10089');
     this.startHttpServer(httpPort);
 
     logger.info('='.repeat(60));
     logger.info('✅ 服务启动成功');
     logger.info(`📡 WebSocket 服务器: ws://localhost:${wsPort}`);
-    logger.info(`🌐 HTTP 服务器: http://localhost:${httpPort}/matches`);
+    logger.info(`🌐 HTTP 服务器: http://localhost:${httpPort}`);
+    logger.info(`📄 页面:`);
+    logger.info(`   - 皇冠赛事: http://localhost:${httpPort}/matches`);
+    logger.info(`   - 第三方赔率: http://localhost:${httpPort}/thirdparty-odds`);
+    logger.info(`   - 名称映射: http://localhost:${httpPort}/team-mapping`);
     logger.info(`🔑 认证令牌: ${process.env.WS_AUTH_TOKEN || 'default-token'}`);
     logger.info('='.repeat(60));
+  }
+
+  /**
+   * 启动第三方 API 管理器
+   */
+  private startThirdPartyManager(): void {
+    const isportsApiKey = process.env.ISPORTS_API_KEY || 'GvpziueL9ouzIJNj';
+    const oddsapiApiKey = process.env.ODDSAPI_API_KEY || '17b831ef959c4e44e4c1e587ee60364ee91b3baac528894b83be1aa017d14620';
+    const fetchInterval = parseInt(process.env.THIRDPARTY_FETCH_INTERVAL || '300'); // 默认 5 分钟
+
+    this.thirdPartyManager = new ThirdPartyManager(
+      isportsApiKey,
+      oddsapiApiKey,
+      fetchInterval
+    );
+
+    // 设置到路由中
+    setThirdPartyManager(this.thirdPartyManager);
+
+    // 启动定时抓取
+    this.thirdPartyManager.start();
+
+    logger.info(`🌍 第三方 API 抓取器已启动 (间隔: ${fetchInterval}秒)`);
   }
 
   /**
@@ -187,42 +267,7 @@ class Application {
    * 启动 HTTP 服务器
    */
   private startHttpServer(port: number): void {
-    this.httpServer = http.createServer((req, res) => {
-      // 处理 /matches 路径
-      if (req.url === '/matches' || req.url === '/matches.html') {
-        const filePath = path.join(process.cwd(), 'public', 'matches.html');
-
-        fs.readFile(filePath, (err, data) => {
-          if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('404 Not Found');
-            return;
-          }
-
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(data);
-        });
-      } else if (req.url === '/matches-v2' || req.url === '/matches-v2.html') {
-        // 处理 /matches-v2 路径
-        const filePath = path.join(process.cwd(), 'public', 'matches-v2.html');
-
-        fs.readFile(filePath, (err, data) => {
-          if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('404 Not Found');
-            return;
-          }
-
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(data);
-        });
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('404 Not Found');
-      }
-    });
-
-    this.httpServer.listen(port, () => {
+    this.httpServer = this.expressApp.listen(port, () => {
       logger.info(`HTTP 服务器启动在端口 ${port}`);
     });
   }
@@ -238,14 +283,20 @@ class Application {
       logger.info('1️⃣ 停止抓取器并登出账号...');
       await this.scraperManager.stopAll();
 
-      // 2. 关闭 WebSocket 服务器
-      logger.info('2️⃣ 关闭 WebSocket 服务器...');
+      // 2. 停止第三方 API 抓取器
+      logger.info('2️⃣ 停止第三方 API 抓取器...');
+      if (this.thirdPartyManager) {
+        this.thirdPartyManager.stop();
+      }
+
+      // 3. 关闭 WebSocket 服务器
+      logger.info('3️⃣ 关闭 WebSocket 服务器...');
       if (this.wsServer) {
         this.wsServer.close();
       }
 
-      // 3. 关闭 HTTP 服务器
-      logger.info('3️⃣ 关闭 HTTP 服务器...');
+      // 4. 关闭 HTTP 服务器
+      logger.info('4️⃣ 关闭 HTTP 服务器...');
       if (this.httpServer) {
         await new Promise<void>((resolve) => {
           if (this.httpServer) {
@@ -256,7 +307,7 @@ class Application {
         });
       }
 
-      // 4. 删除 PID 文件
+      // 5. 删除 PID 文件
       this.removePidFile();
 
       logger.info('✅ 服务已安全关闭');

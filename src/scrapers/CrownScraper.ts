@@ -36,6 +36,7 @@ export class CrownScraper {
   private lastMoreMarketTs: number = 0;
   private maxConcurrentMoreMarkets: number;
   private inflightMoreMarkets = 0;
+  private successfulTransformPath: string = ''; // 记录成功的 transform.php 路径
 
   constructor(account: AccountConfig) {
     this.account = account;
@@ -111,6 +112,25 @@ export class CrownScraper {
    * 4) /app/member/transform.php
    */
   private async postTransform(body: string, config: any = {}): Promise<any> {
+    // 如果已经有成功的路径，优先使用
+    if (this.successfulTransformPath) {
+      try {
+        logger.debug(`[${this.account.showType}] POST ${this.successfulTransformPath} (cached)`);
+        return await this.client.post(this.successfulTransformPath, body, config);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        // 如果缓存的路径失败了（404/405），清除缓存并尝试其他路径
+        if (status === 404 || status === 405) {
+          logger.warn(`[${this.account.showType}] 缓存路径失效，重新探测`);
+          this.successfulTransformPath = '';
+        } else {
+          // 其他错误直接抛出
+          throw err;
+        }
+      }
+    }
+
+    // 尝试所有可能的路径
     const paths = [
       `/transform.php?ver=${this.version}`,
       `/transform.php`,
@@ -127,7 +147,11 @@ export class CrownScraper {
     for (const path of paths) {
       try {
         logger.debug(`[${this.account.showType}] POST ${path}`);
-        return await this.client.post(path, body, config);
+        const response = await this.client.post(path, body, config);
+        // 成功了，记录这个路径
+        this.successfulTransformPath = path;
+        logger.info(`[${this.account.showType}] ✅ 找到可用路径: ${path}`);
+        return response;
       } catch (err: any) {
         lastErr = err;
         const status = err?.response?.status;
@@ -422,40 +446,21 @@ export class CrownScraper {
     try {
       logger.info(`[${this.account.showType}] 🚪 开始登出 (UID: ${uid})...`);
 
-      // 尝试调用登出 API（可能不存在，但尝试一下）
-      // 只尝试最常见的路径，避免产生过多日志
+      // 构建登出参数
+      const params = new URLSearchParams({
+        p: 'logout',
+        uid: uid,
+        ver: this.version,
+        langx: 'zh-cn',
+      });
+
       try {
-        const params = new URLSearchParams({
-          p: 'logout',
-          uid: uid,
-          ver: this.version,
-          langx: 'zh-cn',
-        });
-
-        // 只尝试最常见的两个路径，减少日志噪音
-        const logoutPaths = [
-          `/transform.php?ver=${this.version}`,
-          `/app/member/transform.php?ver=${this.version}`,
-        ];
-
-        let logoutSuccess = false;
-        for (const path of logoutPaths) {
-          try {
-            await this.client.post(path, params.toString());
-            logger.info(`[${this.account.showType}] ✅ 登出 API 调用成功`);
-            logoutSuccess = true;
-            break;
-          } catch (err: any) {
-            // 静默失败，不记录日志
-            continue;
-          }
-        }
-
-        if (!logoutSuccess) {
-          logger.debug(`[${this.account.showType}] 登出 API 不可用（正常现象）`);
-        }
+        // 使用 postTransform 方法，它会自动使用成功的路径
+        await this.postTransform(params.toString());
+        logger.info(`[${this.account.showType}] ✅ 登出 API 调用成功`);
       } catch (apiError: any) {
-        // 登出 API 可能不存在或返回 404，这是正常的
+        // 登出 API 可能不存在或返回错误，这是正常的
+        // 只在 debug 级别记录，避免日志噪音
         logger.debug(`[${this.account.showType}] 登出 API 调用失败: ${apiError.message}`);
       }
 

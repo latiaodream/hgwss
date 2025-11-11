@@ -53,9 +53,12 @@ export class CrownScraper {
     // 代理支持
     const proxyAgent = this.createProxyAgent();
 
+    // 增加超时时间，避免频繁超时
+    const timeout = parseInt(process.env.API_TIMEOUT_MS || '60000', 10);
+
     this.client = axios.create({
       baseURL: this.baseUrl,
-      timeout: 30000,
+      timeout: timeout, // 默认60秒，可通过环境变量配置
       httpsAgent: proxyAgent || new https.Agent({ rejectUnauthorized: false }),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -507,84 +510,112 @@ export class CrownScraper {
       }
     }
 
-    try {
-      logger.debug(`[${this.account.showType}] 开始抓取赛事数据`);
+    // 超时重试机制：最多重试2次
+    const maxRetries = 2;
+    let lastError: any = null;
 
-      const timestamp = Date.now().toString();
-      const showTypeParam = this.getShowTypeParam();
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.debug(`[${this.account.showType}] 开始抓取赛事数据 (尝试 ${attempt}/${maxRetries})`);
 
-      // 构建请求参数
-      const params = new URLSearchParams({
-        uid: this.uid,
-        ver: this.version,
-        langx: 'zh-cn',
-        p: 'get_game_list',
-        p3type: '',
-        date: '',
-        gtype: 'ft', // 足球
-        showtype: showTypeParam.showtype,
-        rtype: showTypeParam.rtype,
-        ltype: '3',
-        filter: '',
-        cupFantasy: 'N',
-        sorttype: 'L',
-        specialClick: '',
-        isFantasy: 'N',
-        ts: timestamp,
-      });
+        const timestamp = Date.now().toString();
+        const showTypeParam = this.getShowTypeParam();
 
-      logger.debug(`[${this.account.showType}] 请求参数:`, {
-        showtype: showTypeParam.showtype,
-        rtype: showTypeParam.rtype,
-      });
+        // 构建请求参数
+        const params = new URLSearchParams({
+          uid: this.uid,
+          ver: this.version,
+          langx: 'zh-cn',
+          p: 'get_game_list',
+          p3type: '',
+          date: '',
+          gtype: 'ft', // 足球
+          showtype: showTypeParam.showtype,
+          rtype: showTypeParam.rtype,
+          ltype: '3',
+          filter: '',
+          cupFantasy: 'N',
+          sorttype: 'L',
+          specialClick: '',
+          isFantasy: 'N',
+          ts: timestamp,
+        });
 
-      const response = await this.postTransform(params.toString(), {
-        headers: {
-          'Cookie': this.cookies,
-        },
-      });
+        logger.debug(`[${this.account.showType}] 请求参数:`, {
+          showtype: showTypeParam.showtype,
+          rtype: showTypeParam.rtype,
+        });
 
-      const risk = this.detectRiskResponse(response.data);
-      if (risk) {
-        this.handleRiskyResponse(risk, `get_game_list/${this.account.showType}`);
-        return [];
-      }
+        const response = await this.postTransform(params.toString(), {
+          headers: {
+            'Cookie': this.cookies,
+          },
+        });
 
-      // 解析 XML 响应
-      const data = await this.parseXmlResponse(response.data);
+        // 成功了，跳出重试循环
+        lastError = null;
 
-      // 检查是否有错误
-      if (data.err) {
-        logger.error(`[${this.account.showType}] API 返回错误: ${data.err}`);
-
-        // 如果是登录过期，重新登录
-        if (data.err.includes('login') || data.err.includes('登录')) {
-          this.isLoggedIn = false;
-          throw new Error('登录已过期');
+        const risk = this.detectRiskResponse(response.data);
+        if (risk) {
+          this.handleRiskyResponse(risk, `get_game_list/${this.account.showType}`);
+          return [];
         }
 
-        return [];
+        // 解析 XML 响应
+        const data = await this.parseXmlResponse(response.data);
+
+        // 检查是否有错误
+        if (data.err) {
+          logger.error(`[${this.account.showType}] API 返回错误: ${data.err}`);
+
+          // 如果是登录过期，重新登录
+          if (data.err.includes('login') || data.err.includes('登录')) {
+            this.isLoggedIn = false;
+            throw new Error('登录已过期');
+          }
+
+          return [];
+        }
+
+        const matches = this.parseMatches(data);
+
+        if (this.enableMoreMarkets) {
+          await this.enrichMatchesWithMoreMarkets(matches);
+        }
+
+        logger.info(`[${this.account.showType}] 抓取到 ${matches.length} 场赛事`);
+
+        return matches;
+
+      } catch (error: any) {
+        lastError = error;
+
+        // 如果是认证错误，重新登录，不重试
+        if (error.response?.status === 401 || error.message?.includes('登录')) {
+          this.isLoggedIn = false;
+          throw error;
+        }
+
+        // 如果是超时错误，记录并重试
+        const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+        if (isTimeout && attempt < maxRetries) {
+          logger.warn(`[${this.account.showType}] 请求超时，${attempt}/${maxRetries} 次尝试失败，等待 2 秒后重试...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        }
+
+        // 其他错误或最后一次尝试失败，抛出错误
+        if (attempt === maxRetries) {
+          const errorMsg = error?.message || String(error);
+          const errorCode = error?.code;
+          logger.error(`[${this.account.showType}] 抓取失败 (${maxRetries}次尝试): ${errorMsg}${errorCode ? ` (${errorCode})` : ''}`);
+          throw error;
+        }
       }
-
-      const matches = this.parseMatches(data);
-
-      if (this.enableMoreMarkets) {
-        await this.enrichMatchesWithMoreMarkets(matches);
-      }
-
-      logger.info(`[${this.account.showType}] 抓取到 ${matches.length} 场赛事`);
-
-      return matches;
-    } catch (error: any) {
-      logger.error(`[${this.account.showType}] 抓取失败:`, error.message);
-
-      // 如果是认证错误，重新登录
-      if (error.response?.status === 401 || error.message.includes('登录')) {
-        this.isLoggedIn = false;
-      }
-
-      throw error;
     }
+
+    // 不应该到这里，但为了类型安全
+    throw lastError || new Error('抓取失败');
   }
 
   private async enrichMatchesWithMoreMarkets(matches: Match[]): Promise<void> {

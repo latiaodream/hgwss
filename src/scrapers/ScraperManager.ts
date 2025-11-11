@@ -235,10 +235,20 @@ export class ScraperManager extends EventEmitter {
 
       logger.info(`[${showType}] 抓取到 ${matches.length} 场赛事`);
     } catch (error: any) {
-      logger.error(`[${showType}] 抓取失败:`, error.message);
+      // 格式化错误信息
+      const errorMsg = error?.message || String(error);
+      const errorCode = error?.code;
+      const errorStatus = error?.response?.status;
+
+      let errorDetail = errorMsg;
+      if (errorCode) errorDetail += ` (code: ${errorCode})`;
+      if (errorStatus) errorDetail += ` (status: ${errorStatus})`;
+
+      logger.error(`[${showType}] 抓取失败: ${errorDetail}`);
+
       const status = this.status.get(showType)!;
       status.errorCount++;
-      status.lastError = error.message;
+      status.lastError = errorDetail;
     }
   }
 
@@ -376,9 +386,19 @@ export class ScraperManager extends EventEmitter {
 
       logger.debug(`[${showType}] 抓取完成，共 ${matches.length} 场赛事`);
     } catch (error: any) {
-      logger.error(`[${showType}] 抓取失败:`, error.message);
+      // 格式化错误信息
+      const errorMsg = error?.message || String(error);
+      const errorCode = error?.code;
+      const errorStatus = error?.response?.status;
+
+      let errorDetail = errorMsg;
+      if (errorCode) errorDetail += ` (code: ${errorCode})`;
+      if (errorStatus) errorDetail += ` (status: ${errorStatus})`;
+
+      logger.error(`[${showType}] 抓取失败: ${errorDetail}`);
+
       status.errorCount++;
-      status.lastError = error.message;
+      status.lastError = errorDetail;
       // 即使失败也继续，等待定时轮换
     }
   }

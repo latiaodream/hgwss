@@ -134,6 +134,7 @@ function getTimeDiff(time1: string, time2: string): number {
 /**
  * AI 匹配算法
  * 新规则：时间一样（30分钟内），联赛名称相似度 >= 20% 就匹配
+ * 增强：使用繁体字进行匹配
  */
 function aiMatch(crown: Match, isports: ISportsMatch): { matched: boolean; confidence: number; timeDiff: number } {
   // 1. 时间差必须在 30 分钟内
@@ -142,17 +143,46 @@ function aiMatch(crown: Match, isports: ISportsMatch): { matched: boolean; confi
     return { matched: false, confidence: 0, timeDiff };
   }
 
-  // 2. 联赛名称相似度（对比中文和英文，取最高值）
-  const leagueSimilarity = Math.max(
+  // 2. 联赛名称相似度（对比简体中文、繁体中文和英文，取最高值）
+  const leagueSimilarities = [
     calculateSimilarity(crown.league_zh, isports.league_name_cn || ''),
-    calculateSimilarity(crown.league_zh, isports.league_name_en || '')
-  );
+    calculateSimilarity(crown.league_zh, isports.league_name_en || ''),
+  ];
 
-  // 3. 新规则：联赛相似度 >= 20% 就匹配
-  const matched = leagueSimilarity >= 0.2;
+  // 如果有繁体中文，也加入对比
+  if (isports.league_name_tc) {
+    leagueSimilarities.push(calculateSimilarity(crown.league_zh, isports.league_name_tc));
+  }
 
-  // 4. 置信度就是联赛相似度
-  const confidence = leagueSimilarity;
+  const leagueSimilarity = Math.max(...leagueSimilarities);
+
+  // 3. 球队名称相似度（对比简体中文、繁体中文和英文，取最高值）
+  const homeSimilarities = [
+    calculateSimilarity(crown.home_zh, isports.team_home_cn || ''),
+    calculateSimilarity(crown.home_zh, isports.team_home_en || ''),
+  ];
+
+  if (isports.team_home_tc) {
+    homeSimilarities.push(calculateSimilarity(crown.home_zh, isports.team_home_tc));
+  }
+
+  const awaySimilarities = [
+    calculateSimilarity(crown.away_zh, isports.team_away_cn || ''),
+    calculateSimilarity(crown.away_zh, isports.team_away_en || ''),
+  ];
+
+  if (isports.team_away_tc) {
+    awaySimilarities.push(calculateSimilarity(crown.away_zh, isports.team_away_tc));
+  }
+
+  const homeSimilarity = Math.max(...homeSimilarities);
+  const awaySimilarity = Math.max(...awaySimilarities);
+
+  // 4. 综合评分：联赛 40% + 主队 30% + 客队 30%
+  const confidence = leagueSimilarity * 0.4 + homeSimilarity * 0.3 + awaySimilarity * 0.3;
+
+  // 5. 匹配规则：联赛相似度 >= 20% 或 综合评分 >= 50%
+  const matched = leagueSimilarity >= 0.2 || confidence >= 0.5;
 
   return { matched, confidence, timeDiff };
 }

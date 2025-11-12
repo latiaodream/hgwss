@@ -580,6 +580,7 @@ router.post('/save-mapping', async (req: Request, res: Response) => {
     const operations: Record<string, any> = {
       teams: [],
       league: null,
+      skipped: [],
     };
 
     const ensureValue = (...values: (string | undefined)[]) => {
@@ -591,31 +592,49 @@ router.post('/save-mapping', async (req: Request, res: Response) => {
 
     // 联赛映射
     const leagueNameCn = ensureValue(isports.league_name_cn, isports.league_name_en, crown.league_zh);
-    if (leagueNameCn) {
-      const existingLeague = await leagueMappingManager.findMappingByISportsName(
-        isports.league_name_en,
-        isports.league_name_cn,
-        isports.league_name_tc
-      );
+      if (leagueNameCn) {
+        const existingLeague = await leagueMappingManager.findMappingByISportsName(
+          isports.league_name_en,
+          isports.league_name_cn,
+          isports.league_name_tc
+        );
 
-      if (existingLeague) {
-        const updated = await leagueMappingManager.updateMapping(existingLeague.id, {
-          crown_cn: crown.league_zh || existingLeague.crown_cn,
-          isports_tc: isports.league_name_tc || existingLeague.isports_tc,
-          verified: true,
-        });
-        operations.league = { type: 'update', id: existingLeague.id, updated };
-      } else {
-        const created = await leagueMappingManager.createMapping({
-          isports_en: ensureValue(isports.league_name_en, isports.league_name_cn, crown.league_zh),
+        const desiredLeague = {
+          crown_cn: ensureValue(crown.league_zh, leagueNameCn),
+          isports_en: ensureValue(isports.league_name_en, leagueNameCn),
           isports_cn: leagueNameCn,
           isports_tc: isports.league_name_tc,
-          crown_cn: ensureValue(crown.league_zh, leagueNameCn),
-          verified: true,
-        });
-        operations.league = { type: 'create', id: created.id };
+        };
+
+        if (existingLeague) {
+          const needsUpdate =
+            desiredLeague.crown_cn !== existingLeague.crown_cn ||
+            (desiredLeague.isports_tc && desiredLeague.isports_tc !== existingLeague.isports_tc);
+
+          if (needsUpdate) {
+            const updated = await leagueMappingManager.updateMapping(existingLeague.id, {
+              crown_cn: desiredLeague.crown_cn,
+              isports_tc: desiredLeague.isports_tc || existingLeague.isports_tc,
+              verified: true,
+            });
+            operations.league = { type: 'update', id: existingLeague.id, updated };
+          } else {
+            operations.league = { type: 'skip', id: existingLeague.id };
+            operations.skipped.push({ target: 'league', id: existingLeague.id });
+          }
+        } else {
+          try {
+            const created = await leagueMappingManager.createMapping({
+              ...desiredLeague,
+              verified: true,
+            });
+            operations.league = { type: 'create', id: created.id };
+          } catch (err: any) {
+            logger.warn('创建联赛映射失败，尝试更新已有记录:', err.message);
+            operations.league = { type: 'error', message: err.message };
+          }
+        }
       }
-    }
 
     // 球队映射 helper
     const upsertTeam = async (
@@ -627,6 +646,13 @@ router.post('/save-mapping', async (req: Request, res: Response) => {
       const fallbackCn = ensureValue(isportsCn, crownCn, isportsEn);
       if (!fallbackCn) return null;
 
+      const desired = {
+        isports_en: ensureValue(isportsEn, fallbackCn),
+        isports_cn: fallbackCn,
+        isports_tc: isportsTc,
+        crown_cn: ensureValue(crownCn, fallbackCn),
+      };
+
       const existing = await teamMappingManager.findMappingByISportsName(
         isportsEn,
         isportsCn,
@@ -634,22 +660,34 @@ router.post('/save-mapping', async (req: Request, res: Response) => {
       );
 
       if (existing) {
-        await teamMappingManager.updateMapping(existing.id, {
-          crown_cn: crownCn || existing.crown_cn,
-          isports_tc: isportsTc || existing.isports_tc,
-          verified: true,
-        });
-        return { type: 'update', id: existing.id };
+        const needsUpdate =
+          desired.crown_cn !== existing.crown_cn ||
+          (desired.isports_tc && desired.isports_tc !== existing.isports_tc);
+
+        if (needsUpdate) {
+          await teamMappingManager.updateMapping(existing.id, {
+            crown_cn: desired.crown_cn,
+            isports_tc: desired.isports_tc || existing.isports_tc,
+            verified: true,
+          });
+          return { type: 'update', id: existing.id };
+        }
+
+        operations.skipped.push({ target: 'team', id: existing.id });
+        return { type: 'skip', id: existing.id };
       }
 
-      const created = await teamMappingManager.createMapping({
-        isports_en: ensureValue(isportsEn, fallbackCn),
-        isports_cn: fallbackCn,
-        isports_tc: isportsTc,
-        crown_cn: ensureValue(crownCn, fallbackCn),
-        verified: true,
-      });
-      return { type: 'create', id: created.id };
+      try {
+        const created = await teamMappingManager.createMapping({
+          ...desired,
+          verified: true,
+        });
+        return { type: 'create', id: created.id };
+      } catch (err: any) {
+        logger.warn('创建球队映射失败，跳过:', err.message);
+        operations.skipped.push({ target: 'team', reason: err.message });
+        return null;
+      }
     };
 
     const homeOp = await upsertTeam(

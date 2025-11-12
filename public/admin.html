@@ -1358,6 +1358,10 @@
                 <div class="stat-value" id="compare-manual-matched" style="color: var(--primary);">0</div>
               </div>
               <div class="stat-card">
+                <div class="stat-label">已入库</div>
+                <div class="stat-value" id="compare-saved" style="color: var(--secondary);">0</div>
+              </div>
+              <div class="stat-card">
                 <div class="stat-label">未匹配</div>
                 <div class="stat-value" id="compare-unmatched" style="color: var(--warning);">0</div>
               </div>
@@ -1380,6 +1384,7 @@
                   <option value="all">全部</option>
                   <option value="ai-matched">AI 匹配</option>
                   <option value="manual-matched">手动匹配</option>
+                  <option value="saved">已入库</option>
                   <option value="unmatched">未匹配</option>
                 </select>
               </div>
@@ -3465,8 +3470,33 @@
     }
 
     // ==================== 赛事匹配功能 ====================
+    const MATCH_COMPARE_SAVED_KEY = 'matchCompareSavedKeys';
     let matchCompareData = [];
     let filteredCompareData = [];
+    let matchCompareSavedSet = new Set();
+
+    const loadSavedMatchSet = () => {
+      try {
+        const raw = localStorage.getItem(MATCH_COMPARE_SAVED_KEY);
+        if (!raw) return new Set();
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? new Set(arr) : new Set();
+      } catch (error) {
+        console.warn('解析 saved match key 失败:', error);
+        return new Set();
+      }
+    };
+
+    const persistSavedMatchSet = () => {
+      localStorage.setItem(MATCH_COMPARE_SAVED_KEY, JSON.stringify(Array.from(matchCompareSavedSet)));
+    };
+
+    const getMatchKey = (item) => {
+      const crownId = item?.crown?.gid;
+      const isportsId = item?.isports?.match_id;
+      if (!crownId || !isportsId) return '';
+      return `${crownId}-${isportsId}`;
+    };
 
     // 加载赛事匹配数据
     async function loadMatchCompareData() {
@@ -3483,7 +3513,17 @@
         const data = await res.json();
 
         if (data.success) {
-          matchCompareData = data.data;
+          matchCompareSavedSet = loadSavedMatchSet();
+          matchCompareData = data.data.map(item => {
+            const key = getMatchKey(item);
+            if (key && matchCompareSavedSet.has(key)) {
+              item.matchType = 'saved';
+            }
+            return item;
+          });
+          const currentKeys = new Set(matchCompareData.map(getMatchKey).filter(Boolean));
+          matchCompareSavedSet = new Set([...matchCompareSavedSet].filter(key => currentKeys.has(key)));
+          persistSavedMatchSet();
           filteredCompareData = matchCompareData;
           updateMatchCompareStats(data.stats);
           renderMatchCompare();
@@ -3498,10 +3538,12 @@
 
     // 更新统计信息
     function updateMatchCompareStats(stats) {
+      const savedCount = matchCompareData.filter(item => item.matchType === 'saved').length;
       document.getElementById('compare-crown-count').textContent = stats.crownCount || 0;
       document.getElementById('compare-isports-count').textContent = stats.isportsCount || 0;
       document.getElementById('compare-ai-matched').textContent = stats.aiMatched || 0;
       document.getElementById('compare-manual-matched').textContent = stats.manualMatched || 0;
+      document.getElementById('compare-saved').textContent = savedCount;
       document.getElementById('compare-unmatched').textContent = stats.unmatched || 0;
     }
 
@@ -3532,12 +3574,13 @@
     // 渲染单个对比项
     function renderCompareItem(item) {
       const { crown, isports, matchType, confidence, timeDiff } = item;
-      const canSaveMapping = matchType !== 'none' && crown && isports;
+      const canSaveMapping = matchType !== 'none' && matchType !== 'saved' && crown && isports;
       const mappingPayload = canSaveMapping ? encodeURIComponent(JSON.stringify({
         crown: {
           league_zh: crown?.league_zh || '',
           home_zh: crown?.home_zh || '',
           away_zh: crown?.away_zh || '',
+          gid: crown?.gid || '',
         },
         isports: {
           league_name_en: isports?.league_name_en || '',
@@ -3549,10 +3592,13 @@
           team_away_en: isports?.team_away_en || '',
           team_away_cn: isports?.team_away_cn || '',
           team_away_tc: isports?.team_away_tc || '',
+          match_id: isports?.match_id || '',
         }
       })) : '';
 
-      const matchStatusBadge = matchType === 'ai'
+      const matchStatusBadge = matchType === 'saved'
+        ? '<span class="badge badge-info">已入库</span>'
+        : matchType === 'ai'
         ? `<span class="badge badge-success">AI 匹配 (${Math.round(confidence * 100)}%)</span>`
         : matchType === 'manual'
         ? '<span class="badge badge-primary">手动匹配</span>'
@@ -3574,12 +3620,12 @@
                 <button class="btn btn-sm btn-primary" onclick="manualMatch('${crown?.gid}', '${isports?.match_id}')">
                   <i class="ri-link"></i> 手动匹配
                 </button>
-              ` : `
+              ` : matchType === 'saved' ? '' : `
                 <button class="btn btn-sm btn-danger" onclick="unmatch('${crown?.gid}', '${isports?.match_id}')">
                   <i class="ri-link-unlink"></i> 取消匹配
                 </button>
               `}
-              <button class="btn btn-sm btn-success" ${canSaveMapping ? `data-payload="${mappingPayload}" onclick="saveMappingFromMatch(this)"` : 'disabled title="需先完成匹配才可入库"'} style="margin-left: 10px; opacity: ${canSaveMapping ? 1 : 0.6}; cursor: ${canSaveMapping ? 'pointer' : 'not-allowed'};">
+              <button class="btn btn-sm btn-success" ${canSaveMapping ? `data-match-key="${crown?.gid || ''}-${isports?.match_id || ''}" data-payload="${mappingPayload}" onclick="saveMappingFromMatch(this)"` : 'disabled title="需先完成匹配才可入库"'} style="margin-left: 10px; opacity: ${canSaveMapping ? 1 : 0.6}; cursor: ${canSaveMapping ? 'pointer' : 'not-allowed'};">
                 <i class="ri-database-2-line"></i> 一键入库
               </button>
             </div>
@@ -3657,6 +3703,8 @@
       const leagueFilter = document.getElementById('compare-league-filter').value.toLowerCase();
 
       filteredCompareData = matchCompareData.filter(item => {
+        if (filterType !== 'saved' && item.matchType === 'saved') return false;
+        if (filterType === 'saved' && item.matchType !== 'saved') return false;
         // 匹配状态筛选
         if (filterType === 'ai-matched' && item.matchType !== 'ai') return false;
         if (filterType === 'manual-matched' && item.matchType !== 'manual') return false;
@@ -3736,6 +3784,11 @@
         const data = await res.json();
         if (data.success) {
           alert('入库成功！');
+          const key = button.dataset.matchKey;
+          if (key) {
+            matchCompareSavedSet.add(key);
+            persistSavedMatchSet();
+          }
           loadMatchCompareData();
         } else {
           alert('入库失败: ' + data.error);

@@ -1205,9 +1205,51 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="form-group">
-          <label class="form-label">JSON 数据</label>
-          <textarea id="mapping-import-data" class="form-control" rows="10" placeholder='[
+        <!-- 导入方式选择 -->
+        <div class="tabs" style="margin-bottom: 20px;">
+          <button class="tab active" onclick="switchImportTab('excel')">Excel 导入</button>
+          <button class="tab" onclick="switchImportTab('json')">JSON 导入</button>
+        </div>
+
+        <!-- Excel 导入 -->
+        <div id="import-excel-tab" class="import-tab-content">
+          <div class="form-group">
+            <label class="form-label">选择 Excel 文件</label>
+            <input type="file" id="mapping-excel-file" class="form-control" accept=".xlsx,.xls" onchange="handleExcelFileSelect(event, 'mapping')">
+            <p style="margin-top: 8px; color: var(--text-muted); font-size: 14px;">
+              <i class="ri-information-line"></i> 支持 .xlsx 和 .xls 格式，最大 5MB
+            </p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Excel 格式要求</label>
+            <div style="background: rgba(59, 130, 246, 0.1); padding: 15px; border-radius: 8px; font-size: 14px;">
+              <p style="margin: 0 0 10px 0;"><strong>列顺序：</strong></p>
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="background: rgba(59, 130, 246, 0.2);">
+                    <th style="padding: 8px; text-align: left; border: 1px solid rgba(59, 130, 246, 0.3);">isports_en</th>
+                    <th style="padding: 8px; text-align: left; border: 1px solid rgba(59, 130, 246, 0.3);">isports_cn</th>
+                    <th style="padding: 8px; text-align: left; border: 1px solid rgba(59, 130, 246, 0.3);">crown_cn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">Manchester United</td>
+                    <td style="padding: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">曼联</td>
+                    <td style="padding: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">曼联</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p style="margin: 10px 0 0 0; color: var(--warning);"><i class="ri-alert-line"></i> 第一行为表头，会被自动忽略</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- JSON 导入 -->
+        <div id="import-json-tab" class="import-tab-content" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">JSON 数据</label>
+            <textarea id="mapping-import-data" class="form-control" rows="10" placeholder='[
   {
     "isports_en": "Manchester United",
     "isports_cn": "曼联",
@@ -1221,9 +1263,10 @@
     "verified": true
   }
 ]'></textarea>
-          <p style="margin-top: 8px; color: var(--text-muted); font-size: 14px;">
-            请输入 JSON 格式的球队映射数据数组
-          </p>
+            <p style="margin-top: 8px; color: var(--text-muted); font-size: 14px;">
+              请输入 JSON 格式的球队映射数据数组
+            </p>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -1281,9 +1324,51 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="form-group">
-          <label class="form-label">JSON 数据</label>
-          <textarea id="league-mapping-import-data" class="form-control" rows="15" placeholder='[
+        <!-- 导入方式选择 -->
+        <div class="tabs" style="margin-bottom: 20px;">
+          <button class="tab active" onclick="switchLeagueImportTab('excel')">Excel 导入</button>
+          <button class="tab" onclick="switchLeagueImportTab('json')">JSON 导入</button>
+        </div>
+
+        <!-- Excel 导入 -->
+        <div id="league-import-excel-tab" class="import-tab-content">
+          <div class="form-group">
+            <label class="form-label">选择 Excel 文件</label>
+            <input type="file" id="league-mapping-excel-file" class="form-control" accept=".xlsx,.xls" onchange="handleExcelFileSelect(event, 'league')">
+            <p style="margin-top: 8px; color: var(--text-muted); font-size: 14px;">
+              <i class="ri-information-line"></i> 支持 .xlsx 和 .xls 格式，最大 5MB
+            </p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Excel 格式要求</label>
+            <div style="background: rgba(59, 130, 246, 0.1); padding: 15px; border-radius: 8px; font-size: 14px;">
+              <p style="margin: 0 0 10px 0;"><strong>列顺序：</strong></p>
+              <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="background: rgba(59, 130, 246, 0.2);">
+                    <th style="padding: 8px; text-align: left; border: 1px solid rgba(59, 130, 246, 0.3);">isports_en</th>
+                    <th style="padding: 8px; text-align: left; border: 1px solid rgba(59, 130, 246, 0.3);">isports_cn</th>
+                    <th style="padding: 8px; text-align: left; border: 1px solid rgba(59, 130, 246, 0.3);">crown_cn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">Premier League</td>
+                    <td style="padding: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">英超</td>
+                    <td style="padding: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">英格兰超级联赛</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p style="margin: 10px 0 0 0; color: var(--warning);"><i class="ri-alert-line"></i> 第一行为表头，会被自动忽略</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- JSON 导入 -->
+        <div id="league-import-json-tab" class="import-tab-content" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">JSON 数据</label>
+            <textarea id="league-mapping-import-data" class="form-control" rows="15" placeholder='[
   {
     "isports_en": "English Premier League",
     "isports_cn": "英格兰超级联赛",
@@ -1291,9 +1376,10 @@
     "verified": true
   }
 ]'></textarea>
-          <p style="margin-top: 8px; color: var(--text-muted); font-size: 14px;">
-            请输入 JSON 格式的联赛映射数据数组
-          </p>
+            <p style="margin-top: 8px; color: var(--text-muted); font-size: 14px;">
+              请输入 JSON 格式的联赛映射数据数组
+            </p>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -2076,40 +2162,106 @@
       document.getElementById('mapping-import-modal').classList.remove('show');
     }
 
+    // 切换导入方式标签
+    function switchImportTab(tab) {
+      // 更新标签样式
+      document.querySelectorAll('#mapping-import-modal .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // 切换内容
+      if (tab === 'excel') {
+        document.getElementById('import-excel-tab').style.display = 'block';
+        document.getElementById('import-json-tab').style.display = 'none';
+      } else {
+        document.getElementById('import-excel-tab').style.display = 'none';
+        document.getElementById('import-json-tab').style.display = 'block';
+      }
+    }
+
+    // 处理 Excel 文件选择
+    function handleExcelFileSelect(event, type) {
+      const file = event.target.files[0];
+      if (file) {
+        console.log(`选择了文件: ${file.name}, 类型: ${type}`);
+      }
+    }
+
     // 批量导入映射
     async function importMappings() {
-      const jsonData = document.getElementById('mapping-import-data').value.trim();
+      // 检查当前是哪个标签
+      const isExcelTab = document.getElementById('import-excel-tab').style.display !== 'none';
 
-      if (!jsonData) {
-        alert('请输入 JSON 数据');
-        return;
-      }
+      if (isExcelTab) {
+        // Excel 导入
+        const fileInput = document.getElementById('mapping-excel-file');
+        const file = fileInput.files[0];
 
-      try {
-        const mappings = JSON.parse(jsonData);
-
-        if (!Array.isArray(mappings)) {
-          alert('数据格式错误：必须是数组');
+        if (!file) {
+          alert('请选择 Excel 文件');
           return;
         }
 
-        const res = await fetch('/api/mapping/teams/batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mappings })
-        });
+        const formData = new FormData();
+        formData.append('file', file);
 
-        const data = await res.json();
+        try {
+          const res = await fetch('/api/mapping/teams/import-excel', {
+            method: 'POST',
+            body: formData
+          });
 
-        if (data.success) {
-          alert(`导入成功！共导入 ${data.count} 条记录`);
-          closeImportMappingModal();
-          loadMappingData();
-        } else {
-          alert('导入失败: ' + data.error);
+          const data = await res.json();
+
+          if (data.success) {
+            let message = `导入成功！共导入 ${data.data.imported} 条记录`;
+            if (data.data.errors > 0) {
+              message += `\n跳过 ${data.data.errors} 条错误记录`;
+            }
+            alert(message);
+            closeImportMappingModal();
+            loadMappingData();
+            fileInput.value = ''; // 清空文件选择
+          } else {
+            alert('导入失败: ' + data.error);
+          }
+        } catch (error) {
+          alert('导入失败: ' + error.message);
         }
-      } catch (error) {
-        alert('导入失败: ' + error.message);
+      } else {
+        // JSON 导入
+        const jsonData = document.getElementById('mapping-import-data').value.trim();
+
+        if (!jsonData) {
+          alert('请输入 JSON 数据');
+          return;
+        }
+
+        try {
+          const mappings = JSON.parse(jsonData);
+
+          if (!Array.isArray(mappings)) {
+            alert('数据格式错误：必须是数组');
+            return;
+          }
+
+          const res = await fetch('/api/mapping/teams/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mappings })
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+            alert(`导入成功！共导入 ${data.count} 条记录`);
+            closeImportMappingModal();
+            loadMappingData();
+          } else {
+            alert('导入失败: ' + data.error);
+          }
+        } catch (error) {
+          alert('导入失败: ' + error.message);
+        }
       }
     }
 
@@ -2351,40 +2503,98 @@
       document.getElementById('league-mapping-import-modal').classList.remove('show');
     }
 
+    // 切换联赛导入方式标签
+    function switchLeagueImportTab(tab) {
+      // 更新标签样式
+      document.querySelectorAll('#league-mapping-import-modal .tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // 切换内容
+      if (tab === 'excel') {
+        document.getElementById('league-import-excel-tab').style.display = 'block';
+        document.getElementById('league-import-json-tab').style.display = 'none';
+      } else {
+        document.getElementById('league-import-excel-tab').style.display = 'none';
+        document.getElementById('league-import-json-tab').style.display = 'block';
+      }
+    }
+
     // 批量导入联赛映射
     async function importLeagueMappings() {
-      const jsonData = document.getElementById('league-mapping-import-data').value.trim();
+      // 检查当前是哪个标签
+      const isExcelTab = document.getElementById('league-import-excel-tab').style.display !== 'none';
 
-      if (!jsonData) {
-        alert('请输入 JSON 数据');
-        return;
-      }
+      if (isExcelTab) {
+        // Excel 导入
+        const fileInput = document.getElementById('league-mapping-excel-file');
+        const file = fileInput.files[0];
 
-      try {
-        const mappings = JSON.parse(jsonData);
-
-        if (!Array.isArray(mappings)) {
-          alert('数据格式错误：必须是数组');
+        if (!file) {
+          alert('请选择 Excel 文件');
           return;
         }
 
-        const res = await fetch('/api/league-mapping/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mappings })
-        });
+        const formData = new FormData();
+        formData.append('file', file);
 
-        const data = await res.json();
+        try {
+          const res = await fetch('/api/league-mapping/import-excel', {
+            method: 'POST',
+            body: formData
+          });
 
-        if (data.success) {
-          alert(`导入成功！共导入 ${data.imported} 条记录`);
-          closeImportLeagueMappingModal();
-          loadLeagueMappingData();
-        } else {
-          alert('导入失败: ' + data.error);
+          const data = await res.json();
+
+          if (data.success) {
+            let message = `导入成功！共导入 ${data.data.imported} 条记录`;
+            if (data.data.errors > 0) {
+              message += `\n跳过 ${data.data.errors} 条错误记录`;
+            }
+            alert(message);
+            closeImportLeagueMappingModal();
+            loadLeagueMappingData();
+            fileInput.value = ''; // 清空文件选择
+          } else {
+            alert('导入失败: ' + data.error);
+          }
+        } catch (error) {
+          alert('导入失败: ' + error.message);
         }
-      } catch (error) {
-        alert('导入失败: ' + error.message);
+      } else {
+        // JSON 导入
+        const jsonData = document.getElementById('league-mapping-import-data').value.trim();
+
+        if (!jsonData) {
+          alert('请输入 JSON 数据');
+          return;
+        }
+
+        try {
+          const mappings = JSON.parse(jsonData);
+
+          if (!Array.isArray(mappings)) {
+            alert('数据格式错误：必须是数组');
+            return;
+          }
+
+          const res = await fetch('/api/league-mapping/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mappings })
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+            alert(`导入成功！共导入 ${data.imported} 条记录`);
+            closeImportLeagueMappingModal();
+            loadLeagueMappingData();
+          } else {
+            alert('导入失败: ' + data.error);
+          }
+        } catch (error) {
+          alert('导入失败: ' + error.message);
+        }
       }
     }
 

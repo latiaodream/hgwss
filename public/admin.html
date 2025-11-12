@@ -2672,30 +2672,21 @@
       alert('查看皇冠赛事详情: ' + matchId);
     }
 
-    // 导出球队信息（用于翻译）
+    // 导出球队信息（用于翻译）- Excel 格式
     async function exportTeams() {
       try {
         const res = await fetch('/api/thirdparty/export-teams');
         const data = await res.json();
 
         if (data.success) {
-          // 转换为 CSV 格式
-          const csv = [
-            ['isports_en', 'isports_cn', 'crown_cn'].join(','),
-            ...data.data.map(team => [
-              team.isports_en,
-              team.isports_cn || '',
-              team.crown_cn || ''
-            ].join(','))
-          ].join('\n');
+          // 使用后端生成 Excel 文件
+          const excelRes = await fetch('/api/thirdparty/export-teams-excel');
+          const blob = await excelRes.blob();
 
-          // 添加 BOM 以支持 Excel 正确显示中文
-          const BOM = '\uFEFF';
-          const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `teams-export-${new Date().toISOString().split('T')[0]}.csv`;
+          link.download = `teams-export-${new Date().toISOString().split('T')[0]}.xlsx`;
           link.click();
           URL.revokeObjectURL(url);
 
@@ -2708,30 +2699,21 @@
       }
     }
 
-    // 导出联赛信息（用于翻译）
+    // 导出联赛信息（用于翻译）- Excel 格式
     async function exportLeagues() {
       try {
         const res = await fetch('/api/thirdparty/export-leagues');
         const data = await res.json();
 
         if (data.success) {
-          // 转换为 CSV 格式
-          const csv = [
-            ['isports_en', 'isports_cn', 'crown_cn'].join(','),
-            ...data.data.map(league => [
-              league.isports_en,
-              league.isports_cn || '',
-              league.crown_cn || ''
-            ].join(','))
-          ].join('\n');
+          // 使用后端生成 Excel 文件
+          const excelRes = await fetch('/api/thirdparty/export-leagues-excel');
+          const blob = await excelRes.blob();
 
-          // 添加 BOM 以支持 Excel 正确显示中文
-          const BOM = '\uFEFF';
-          const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `leagues-export-${new Date().toISOString().split('T')[0]}.csv`;
+          link.download = `leagues-export-${new Date().toISOString().split('T')[0]}.xlsx`;
           link.click();
           URL.revokeObjectURL(url);
 

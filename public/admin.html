@@ -3214,6 +3214,34 @@
         const crown = item.crown;
         const isports = item.isports;
         const matched = item.matched;
+        const timeDiff = item.timeDiff;
+        const matchedBy = item.matchedBy;
+
+        // 时间差提示
+        let timeDiffText = '';
+        if (matched && timeDiff !== undefined) {
+          if (timeDiff < 1) {
+            timeDiffText = '<span style="color: var(--success); font-size: 12px;">⏱ 时间完全一致</span>';
+          } else if (timeDiff <= 5) {
+            timeDiffText = `<span style="color: var(--success); font-size: 12px;">⏱ 时间差 ${timeDiff.toFixed(0)} 分钟</span>`;
+          } else if (timeDiff <= 30) {
+            timeDiffText = `<span style="color: var(--warning); font-size: 12px;">⏱ 时间差 ${timeDiff.toFixed(0)} 分钟</span>`;
+          } else {
+            timeDiffText = `<span style="color: var(--danger); font-size: 12px;">⏱ 时间差 ${timeDiff.toFixed(0)} 分钟</span>`;
+          }
+        }
+
+        // 匹配方式提示
+        let matchTypeText = '';
+        if (matchedBy === 'both') {
+          matchTypeText = '球队+联赛';
+        } else if (matchedBy === 'team') {
+          matchTypeText = '球队';
+        } else if (matchedBy === 'league') {
+          matchTypeText = '联赛';
+        } else if (matchedBy === 'time') {
+          matchTypeText = '时间';
+        }
 
         return `
           <div class="match-card" style="margin-bottom: 15px; border-left: 3px solid ${matched ? 'var(--success)' : 'var(--warning)'};">
@@ -3222,7 +3250,8 @@
               <div class="match-info">
                 <div>${crown.league_zh} <span class="badge badge-${crown.showType}">${getShowTypeText(crown.showType)}</span></div>
                 <div class="match-time">${formatTime(crown.match_time)}</div>
-                ${matched ? '<span class="badge badge-success" style="margin-top: 5px;">已匹配</span>' : '<span class="badge badge-warning" style="margin-top: 5px;">未匹配</span>'}
+                ${matched ? `<span class="badge badge-success" style="margin-top: 5px;">已匹配 (${matchTypeText})</span>` : '<span class="badge badge-warning" style="margin-top: 5px;">未匹配</span>'}
+                ${timeDiffText ? `<div style="margin-top: 3px;">${timeDiffText}</div>` : ''}
               </div>
               <div class="team-away">${crown.away_zh}</div>
             </div>
@@ -3251,8 +3280,11 @@
             ${matched && isports ? `
               <!-- iSports 赔率 -->
               <div style="margin-top: 10px; padding: 15px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
-                <div style="font-weight: bold; margin-bottom: 10px; color: var(--success);">
+                <div style="font-weight: bold; margin-bottom: 5px; color: var(--success);">
                   <i class="ri-database-2-line"></i> iSports 赔率
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                  比赛时间: ${formatTime(isports.match_time)}
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
                   <div>

@@ -267,22 +267,30 @@ export class ISportsAPIScraper {
   /**
    * 解析赔率数据，返回 Map
    * 数据格式: handicap, europeOdds, overUnder, handicapHalf, overUnderHalf
-   * 每个数组包含字符串，格式: "matchId,companyId,line,homeOdds,awayOdds,...,handicapIndex,..."
+   *
+   * handicap 格式: matchId,companyId,instantHandicap,instantHome,instantAway,maintenance,inPlay,handicapIndex,changeTime,close
+   * overUnder 格式: matchId,companyId,instantHandicap,instantOver,instantUnder,handicapIndex,changeTime,close
    */
   private parseOddsDataToMap(data: any): Map<string, ISportsMatch> {
     const matchesMap = new Map<string, ISportsMatch>();
 
     // 解析让球盘（亚洲盘）- 支持多盘口
+    // 格式: matchId,companyId,instantHandicap,instantHome,instantAway,maintenance,inPlay,handicapIndex,changeTime,close
     if (data.handicap && Array.isArray(data.handicap)) {
       for (const oddsStr of data.handicap) {
         const parts = oddsStr.split(',');
-        if (parts.length < 11) continue;
+        if (parts.length < 10) continue;
 
         const matchId = parts[0];
+        const companyId = parseInt(parts[1]);
+
+        // 只处理皇冠（Company ID = 3）的赔率
+        if (companyId !== this.crownCompanyId) continue;
+
         const handicapLine = parseFloat(parts[2]);
         const homeOdds = parseFloat(parts[3]);
         const awayOdds = parseFloat(parts[4]);
-        const handicapIndex = parseInt(parts[7]) || 1; // handicapIndex 在第8个位置
+        const handicapIndex = parseInt(parts[7]) || 1; // handicapIndex 在第8个位置（索引7）
 
         if (!matchesMap.has(matchId)) {
           matchesMap.set(matchId, this.createEmptyMatch(matchId));
@@ -307,16 +315,22 @@ export class ISportsAPIScraper {
     }
 
     // 解析大小球 - 支持多盘口
+    // 格式: matchId,companyId,instantHandicap,instantOver,instantUnder,handicapIndex,changeTime,close
     if (data.overUnder && Array.isArray(data.overUnder)) {
       for (const oddsStr of data.overUnder) {
         const parts = oddsStr.split(',');
-        if (parts.length < 11) continue;
+        if (parts.length < 8) continue;
 
         const matchId = parts[0];
+        const companyId = parseInt(parts[1]);
+
+        // 只处理皇冠（Company ID = 3）的赔率
+        if (companyId !== this.crownCompanyId) continue;
+
         const totalLine = parseFloat(parts[2]);
         const overOdds = parseFloat(parts[3]);
         const underOdds = parseFloat(parts[4]);
-        const handicapIndex = parseInt(parts[5]) || 1; // handicapIndex 在第6个位置
+        const handicapIndex = parseInt(parts[5]) || 1; // handicapIndex 在第6个位置（索引5）
 
         if (!matchesMap.has(matchId)) {
           matchesMap.set(matchId, this.createEmptyMatch(matchId));

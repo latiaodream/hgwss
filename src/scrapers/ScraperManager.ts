@@ -35,6 +35,14 @@ export class ScraperManager extends EventEmitter {
   }
 
   /**
+   * 设置是否使用数据库
+   */
+  setUseDatabase(useDatabase: boolean): void {
+    this.useDatabase = useDatabase;
+    logger.info(`[ScraperManager] useDatabase 设置为: ${useDatabase}`);
+  }
+
+  /**
    * 初始化缓存
    */
   private initializeCache(): void {
@@ -232,10 +240,12 @@ export class ScraperManager extends EventEmitter {
         try {
           const crownMatches = this.convertToCrownMatches(matches, showType);
           const saved = await this.crownMatchRepository.upsertBatch(crownMatches);
-          logger.debug(`[${showType}] 保存 ${saved} 场赛事到数据库`);
+          logger.info(`[${showType}] 保存 ${saved} 场赛事到数据库`);
         } catch (dbError: any) {
           logger.error(`[${showType}] 保存到数据库失败:`, dbError.message);
         }
+      } else if (!this.useDatabase) {
+        logger.warn(`[${showType}] useDatabase=false，跳过数据库保存`);
       }
 
       // 检测变化并发送事件

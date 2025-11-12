@@ -100,8 +100,10 @@ class Application {
       logger.info('✅ 数据库连接成功');
       await initDatabase();
       logger.info('✅ 数据库表初始化完成');
+      this.scraperManager.setUseDatabase(true);
     } else {
       logger.warn('⚠️ 数据库连接失败，将使用 JSON 文件存储');
+      this.scraperManager.setUseDatabase(false);
     }
 
     // 加载账号配置

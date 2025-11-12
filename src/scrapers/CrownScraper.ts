@@ -124,7 +124,7 @@ export class CrownScraper {
         const status = err?.response?.status;
         // 如果缓存的路径失败了（404/405），清除缓存并尝试其他路径
         if (status === 404 || status === 405) {
-          logger.warn(`[${this.account.showType}] 缓存路径失效，重新探测`);
+          logger.debug(`[${this.account.showType}] 缓存路径失效，重新探测`);
           this.successfulTransformPath = '';
         } else {
           // 其他错误直接抛出
@@ -159,7 +159,7 @@ export class CrownScraper {
         lastErr = err;
         const status = err?.response?.status;
         if (status === 404 || status === 405) {
-          logger.warn(`[${this.account.showType}] ${path} 返回 ${status}，尝试下一个路径`);
+          logger.debug(`[${this.account.showType}] ${path} 返回 ${status}，尝试下一个路径`);
           continue;
         }
         // 其他错误不再回退，直接抛出

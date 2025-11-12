@@ -270,5 +270,23 @@ export class MappingManager {
   async reload(): Promise<void> {
     await this.loadMappings();
   }
+
+  /**
+   * 根据 iSports 名称查找映射
+   */
+  async findMappingByISportsName(isportsEn: string, isportsCn: string): Promise<TeamMapping | null> {
+    if (this.useDatabase) {
+      // 从数据库查找
+      const all = await this.repository.findAll();
+      return all.find((m: TeamMapping) =>
+        m.isports_en === isportsEn || m.isports_cn === isportsCn
+      ) || null;
+    } else {
+      // 从内存查找
+      return Array.from(this.mappings.values()).find(m =>
+        m.isports_en === isportsEn || m.isports_cn === isportsCn
+      ) || null;
+    }
+  }
 }
 

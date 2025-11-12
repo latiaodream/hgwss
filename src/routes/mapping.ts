@@ -3,8 +3,26 @@
  */
 
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
 import { MappingManager } from '../utils/MappingManager';
 import logger from '../utils/logger';
+
+// 配置 multer 用于文件上传
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel') {
+      cb(null, true);
+    } else {
+      cb(new Error('只支持 .xlsx 和 .xls 格式的文件'));
+    }
+  },
+});
 
 const router = Router();
 const mappingManager = new MappingManager();
@@ -242,6 +260,103 @@ router.get('/statistics', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.error('[API] 获取统计信息失败:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /api/mapping/teams/import-excel
+ * 从 Excel 文件导入球队映射
+ *
+ * Excel 格式要求：
+ * - 第一行为表头（会被忽略）
+ * - 列顺序：isports_en, isports_cn, crown_cn
+ * - 示例：
+ *   | isports_en | isports_cn | crown_cn |
+ *   | Manchester United | 曼联 | 曼联 |
+ */
+router.post('/teams/import-excel', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: '请上传文件',
+      });
+    }
+
+    // 解析 Excel 文件
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+
+    // 转换为 JSON，跳过表头
+    const data: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+    if (data.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Excel 文件为空或格式不正确',
+      });
+    }
+
+    // 解析数据（跳过第一行表头）
+    const mappings = [];
+    const errors = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+
+      // 跳过空行
+      if (!row || row.length === 0 || !row[0]) {
+        continue;
+      }
+
+      const isports_en = row[0]?.toString().trim();
+      const isports_cn = row[1]?.toString().trim();
+      const crown_cn = row[2]?.toString().trim();
+
+      if (!isports_en || !isports_cn || !crown_cn) {
+        errors.push({
+          row: i + 1,
+          error: '缺少必要字段',
+          data: row,
+        });
+        continue;
+      }
+
+      mappings.push({
+        isports_en,
+        isports_cn,
+        crown_cn,
+        verified: false,
+      });
+    }
+
+    if (mappings.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: '没有有效的数据可导入',
+        errors,
+      });
+    }
+
+    // 批量导入
+    const imported = await mappingManager.importMappings(mappings);
+
+    res.json({
+      success: true,
+      data: {
+        imported: imported.length,
+        total: data.length - 1,
+        errors: errors.length,
+      },
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error: any) {
+    logger.error('[API] Excel 导入失败:', error.message);
     res.status(500).json({
       success: false,
       error: error.message,

@@ -116,9 +116,17 @@ export class OddsAPIScraper {
 
       return matches;
     } catch (error: any) {
-      logger.error(`[OddsAPI] 获取滚球赛事失败: ${error.message}`);
-      if (error.response) {
-        logger.error(`[OddsAPI] 响应状态: ${error.response.status}, 数据: ${JSON.stringify(error.response.data)}`);
+      // 429 错误（超过速率限制）使用 warn 级别
+      if (error.response?.status === 429) {
+        logger.warn(`[OddsAPI] 获取滚球赛事失败: ${error.message}`);
+        if (error.response.data) {
+          logger.warn(`[OddsAPI] 响应: ${JSON.stringify(error.response.data)}`);
+        }
+      } else {
+        logger.error(`[OddsAPI] 获取滚球赛事失败: ${error.message}`);
+        if (error.response) {
+          logger.error(`[OddsAPI] 响应状态: ${error.response.status}, 数据: ${JSON.stringify(error.response.data)}`);
+        }
       }
       return [];
     }
@@ -148,7 +156,15 @@ export class OddsAPIScraper {
 
       return matches;
     } catch (error: any) {
-      logger.error(`[OddsAPI] 获取今日赛事失败: ${error.message}`);
+      // 429 错误（超过速率限制）使用 warn 级别
+      if (error.response?.status === 429) {
+        logger.warn(`[OddsAPI] 获取今日赛事失败: ${error.message}`);
+        if (error.response.data) {
+          logger.warn(`[OddsAPI] 响应: ${JSON.stringify(error.response.data)}`);
+        }
+      } else {
+        logger.error(`[OddsAPI] 获取今日赛事失败: ${error.message}`);
+      }
       return [];
     }
   }

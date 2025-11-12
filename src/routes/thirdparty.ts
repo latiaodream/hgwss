@@ -4,7 +4,15 @@
 
 import { Router, Request, Response } from 'express';
 import { ThirdPartyManager } from '../scrapers/ThirdPartyManager';
+import { MappingManager } from '../utils/MappingManager';
+import { LeagueMappingManager } from '../utils/LeagueMappingManager';
+import { ISportsMatch } from '../scrapers/ISportsAPIScraper';
+import { OddsAPIMatch } from '../scrapers/OddsAPIScraper';
 import logger from '../utils/logger';
+
+// 初始化映射管理器
+const teamMappingManager = new MappingManager();
+const leagueMappingManager = new LeagueMappingManager();
 
 const router = Router();
 
@@ -18,6 +26,76 @@ export function setThirdPartyManager(manager: ThirdPartyManager) {
   logger.info(`[Routes] setThirdPartyManager 被调用，manager 是否存在: ${!!manager}`);
   thirdPartyManager = manager;
   logger.info(`[Routes] thirdPartyManager 已设置，是否存在: ${!!thirdPartyManager}`);
+}
+
+/**
+ * 应用球队映射到 iSports 赛事
+ */
+async function applyTeamMappingToISports(match: ISportsMatch): Promise<ISportsMatch> {
+  const homeMapping = await teamMappingManager.findMappingByISportsName(match.team_home_en, match.team_home_cn);
+  const awayMapping = await teamMappingManager.findMappingByISportsName(match.team_away_en, match.team_away_cn);
+
+  return {
+    ...match,
+    team_home_cn: homeMapping?.crown_cn || match.team_home_cn,
+    team_away_cn: awayMapping?.crown_cn || match.team_away_cn,
+  };
+}
+
+/**
+ * 应用联赛映射到 iSports 赛事
+ */
+async function applyLeagueMappingToISports(match: ISportsMatch): Promise<ISportsMatch> {
+  const leagueMapping = await leagueMappingManager.findMappingByISportsName(match.league_name_en, match.league_name_cn);
+
+  return {
+    ...match,
+    league_name_cn: leagueMapping?.crown_cn || match.league_name_cn,
+  };
+}
+
+/**
+ * 应用所有映射到 iSports 赛事
+ */
+async function applyMappingsToISports(match: ISportsMatch): Promise<ISportsMatch> {
+  let mapped = await applyTeamMappingToISports(match);
+  mapped = await applyLeagueMappingToISports(mapped);
+  return mapped;
+}
+
+/**
+ * 应用球队映射到 OddsAPI 赛事
+ */
+async function applyTeamMappingToOddsAPI(match: OddsAPIMatch): Promise<OddsAPIMatch> {
+  const homeMapping = await teamMappingManager.findMappingByISportsName(match.team_home_en, match.team_home_cn);
+  const awayMapping = await teamMappingManager.findMappingByISportsName(match.team_away_en, match.team_away_cn);
+
+  return {
+    ...match,
+    team_home_cn: homeMapping?.crown_cn || match.team_home_cn,
+    team_away_cn: awayMapping?.crown_cn || match.team_away_cn,
+  };
+}
+
+/**
+ * 应用联赛映射到 OddsAPI 赛事
+ */
+async function applyLeagueMappingToOddsAPI(match: OddsAPIMatch): Promise<OddsAPIMatch> {
+  const leagueMapping = await leagueMappingManager.findMappingByISportsName(match.league_name_en, match.league_name_cn);
+
+  return {
+    ...match,
+    league_name_cn: leagueMapping?.crown_cn || match.league_name_cn,
+  };
+}
+
+/**
+ * 应用所有映射到 OddsAPI 赛事
+ */
+async function applyMappingsToOddsAPI(match: OddsAPIMatch): Promise<OddsAPIMatch> {
+  let mapped = await applyTeamMappingToOddsAPI(match);
+  mapped = await applyLeagueMappingToOddsAPI(mapped);
+  return mapped;
 }
 
 /**
@@ -54,10 +132,13 @@ router.get('/isports', async (req: Request, res: Response) => {
       logger.info(`[API] 筛选 status=${status} 后剩余 ${matches.length} 场赛事`);
     }
 
+    // 应用映射
+    const mappedMatches = await Promise.all(matches.map(m => applyMappingsToISports(m)));
+
     res.json({
       success: true,
-      data: matches,
-      count: matches.length,
+      data: mappedMatches,
+      count: mappedMatches.length,
       source: 'iSportsAPI',
     });
   } catch (error: any) {
@@ -98,10 +179,13 @@ router.get('/odds-api', async (req: Request, res: Response) => {
       matches = matches.filter(m => m.status === status);
     }
 
+    // 应用映射
+    const mappedMatches = await Promise.all(matches.map(m => applyMappingsToOddsAPI(m)));
+
     res.json({
       success: true,
-      data: matches,
-      count: matches.length,
+      data: mappedMatches,
+      count: mappedMatches.length,
       source: 'Odds-API.io',
     });
   } catch (error: any) {
@@ -137,13 +221,21 @@ router.get('/all', async (req: Request, res: Response) => {
 
     const data = thirdPartyManager.getCachedData();
 
+    // 应用映射
+    const mappedISports = await Promise.all(data.isports.map(m => applyMappingsToISports(m)));
+    const mappedOddsAPI = await Promise.all(data.oddsapi.map(m => applyMappingsToOddsAPI(m)));
+
     res.json({
       success: true,
-      data,
+      data: {
+        isports: mappedISports,
+        oddsapi: mappedOddsAPI,
+        last_update: data.last_update,
+      },
       count: {
-        isports: data.isports.length,
-        oddsapi: data.oddsapi.length,
-        total: data.isports.length + data.oddsapi.length,
+        isports: mappedISports.length,
+        oddsapi: mappedOddsAPI.length,
+        total: mappedISports.length + mappedOddsAPI.length,
       },
     });
   } catch (error: any) {

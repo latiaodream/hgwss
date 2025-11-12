@@ -3381,6 +3381,27 @@
                 <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
                   比赛时间: ${formatTime(isports.match_time)}
                 </div>
+
+                <!-- 球队和联赛信息 -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(16, 185, 129, 0.2);">
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 12px;">联赛</div>
+                    <div style="font-size: 13px;">${isports.league_name_cn || isports.league_name_en}</div>
+                    ${isports.league_name_tc ? `<div style="font-size: 11px; color: var(--text-muted);">繁体: ${isports.league_name_tc}</div>` : ''}
+                  </div>
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 12px;">主队</div>
+                    <div style="font-size: 13px;">${isports.team_home_cn || isports.team_home_en}</div>
+                    ${isports.team_home_tc ? `<div style="font-size: 11px; color: var(--text-muted);">繁体: ${isports.team_home_tc}</div>` : ''}
+                  </div>
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 12px;">客队</div>
+                    <div style="font-size: 13px;">${isports.team_away_cn || isports.team_away_en}</div>
+                    ${isports.team_away_tc ? `<div style="font-size: 11px; color: var(--text-muted);">繁体: ${isports.team_away_tc}</div>` : ''}
+                  </div>
+                </div>
+
+                <!-- 赔率信息 -->
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
                   <div>
                     <div style="color: var(--text-muted); font-size: 12px;">让球</div>

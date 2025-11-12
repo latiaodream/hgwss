@@ -13,6 +13,7 @@ import leagueMappingRouter from './routes/league-mapping';
 import thirdpartyRouter, { setThirdPartyManager } from './routes/thirdparty';
 import matchesRouter, { setScraperManager } from './routes/matches';
 import matchPushRouter, { setManagers } from './routes/match-push';
+import matchCompareRouter from './routes/match-compare';
 import { testConnection, initDatabase, closeDatabase } from './config/database';
 
 // 加载环境变量
@@ -51,6 +52,7 @@ class Application {
     this.expressApp.use('/api/thirdparty', thirdpartyRouter);
     this.expressApp.use('/api/matches', matchesRouter);
     this.expressApp.use('/api/match-push', matchPushRouter);
+    this.expressApp.use('/api/match-compare', matchCompareRouter);
 
     // 页面路由
     this.expressApp.get('/', (req, res) => {

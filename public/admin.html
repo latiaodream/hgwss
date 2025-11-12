@@ -804,6 +804,10 @@
         <i class="ri-send-plane-line"></i>
         <span>赛事推送</span>
       </div>
+      <div class="nav-item" data-page="match-compare">
+        <i class="ri-git-compare-line"></i>
+        <span>赛事匹配</span>
+      </div>
     </nav>
   </div>
 
@@ -1310,6 +1314,96 @@
               <button class="btn btn-sm" onclick="goToMatchPushPage(currentMatchPushPage + 1)" id="match-push-next-page">下一页</button>
               <button class="btn btn-sm" onclick="goToMatchPushPage(totalMatchPushPages)" id="match-push-last-page">末页</button>
               <span style="margin-left: 15px;">共 <span id="match-push-total-count">0</span> 条</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 赛事匹配页面 -->
+      <div id="page-match-compare" class="page" style="display: none;">
+        <div class="page-header">
+          <h2 class="page-title">赛事匹配</h2>
+          <p class="page-subtitle">对比皇冠和 iSports 赛事，智能匹配同一场比赛</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">赛事对比</h3>
+            <div class="action-btns">
+              <button class="btn btn-success btn-sm" onclick="exportMatchCompare()">
+                <i class="ri-file-excel-2-line"></i> 导出 Excel
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="loadMatchCompareData()">
+                <i class="ri-refresh-line"></i> 刷新
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- 统计信息 -->
+            <div id="match-compare-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px;">
+              <div class="stat-card">
+                <div class="stat-label">皇冠赛事</div>
+                <div class="stat-value" id="compare-crown-count">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">iSports 赛事</div>
+                <div class="stat-value" id="compare-isports-count">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">AI 匹配</div>
+                <div class="stat-value" id="compare-ai-matched" style="color: var(--success);">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">手动匹配</div>
+                <div class="stat-value" id="compare-manual-matched" style="color: var(--primary);">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">未匹配</div>
+                <div class="stat-value" id="compare-unmatched" style="color: var(--warning);">0</div>
+              </div>
+            </div>
+
+            <!-- 筛选器 -->
+            <div class="filters">
+              <div class="filter-group">
+                <label class="filter-label">赛事类型</label>
+                <select id="compare-type" onchange="loadMatchCompareData()">
+                  <option value="live">滚球</option>
+                  <option value="today">今日</option>
+                  <option value="early">早盘</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">匹配状态</label>
+                <select id="compare-filter" onchange="filterMatchCompare()">
+                  <option value="all">全部</option>
+                  <option value="ai-matched">AI 匹配</option>
+                  <option value="manual-matched">手动匹配</option>
+                  <option value="unmatched">未匹配</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">时间范围</label>
+                <select id="compare-time-range" onchange="loadMatchCompareData()">
+                  <option value="all">全部</option>
+                  <option value="1h">1小时内</option>
+                  <option value="3h">3小时内</option>
+                  <option value="6h">6小时内</option>
+                  <option value="12h">12小时内</option>
+                  <option value="24h">24小时内</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label class="filter-label">联赛筛选</label>
+                <input type="text" id="compare-league-filter" placeholder="输入联赛名称" onkeyup="filterMatchCompare()" class="form-control">
+              </div>
+            </div>
+
+            <!-- 赛事对比列表 -->
+            <div id="match-compare-container" style="margin-top: 20px;">
+              <div style="text-align: center; padding: 40px;">
+                <div class="loading"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -3344,6 +3438,260 @@
         lastBtn.disabled = currentMatchPushPage === totalMatchPushPages;
       } else {
         pagination.style.display = 'none';
+      }
+    }
+
+    // ==================== 赛事匹配功能 ====================
+    let matchCompareData = [];
+    let filteredCompareData = [];
+
+    // 加载赛事匹配数据
+    async function loadMatchCompareData() {
+      try {
+        const showType = document.getElementById('compare-type').value;
+        const timeRange = document.getElementById('compare-time-range').value;
+
+        const params = new URLSearchParams({
+          showType,
+          timeRange
+        });
+
+        const res = await fetch(`/api/match-compare?${params}`);
+        const data = await res.json();
+
+        if (data.success) {
+          matchCompareData = data.data;
+          filteredCompareData = matchCompareData;
+          updateMatchCompareStats(data.stats);
+          renderMatchCompare();
+        } else {
+          alert('加载失败: ' + data.error);
+        }
+      } catch (error) {
+        console.error('加载赛事匹配数据失败:', error);
+        alert('加载失败: ' + error.message);
+      }
+    }
+
+    // 更新统计信息
+    function updateMatchCompareStats(stats) {
+      document.getElementById('compare-crown-count').textContent = stats.crownCount || 0;
+      document.getElementById('compare-isports-count').textContent = stats.isportsCount || 0;
+      document.getElementById('compare-ai-matched').textContent = stats.aiMatched || 0;
+      document.getElementById('compare-manual-matched').textContent = stats.manualMatched || 0;
+      document.getElementById('compare-unmatched').textContent = stats.unmatched || 0;
+    }
+
+    // 渲染赛事对比列表
+    function renderMatchCompare() {
+      const container = document.getElementById('match-compare-container');
+
+      if (filteredCompareData.length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">暂无数据</div>';
+        return;
+      }
+
+      // 按时间排序
+      const sorted = [...filteredCompareData].sort((a, b) => {
+        const timeA = new Date(a.crown?.match_time || a.isports?.match_time || 0);
+        const timeB = new Date(b.crown?.match_time || b.isports?.match_time || 0);
+        return timeA - timeB;
+      });
+
+      let html = '';
+      sorted.forEach(item => {
+        html += renderCompareItem(item);
+      });
+
+      container.innerHTML = html;
+    }
+
+    // 渲染单个对比项
+    function renderCompareItem(item) {
+      const { crown, isports, matchType, confidence, timeDiff } = item;
+
+      const matchStatusBadge = matchType === 'ai'
+        ? `<span class="badge badge-success">AI 匹配 (${Math.round(confidence * 100)}%)</span>`
+        : matchType === 'manual'
+        ? '<span class="badge badge-primary">手动匹配</span>'
+        : '<span class="badge badge-warning">未匹配</span>';
+
+      const timeDiffText = timeDiff !== undefined
+        ? `<span style="font-size: 12px; color: var(--text-muted);">时间差: ${timeDiff} 分钟</span>`
+        : '';
+
+      return `
+        <div class="compare-item" style="margin-bottom: 20px; padding: 20px; background: var(--bg-light); border-radius: 12px; border: 1px solid var(--border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div>
+              ${matchStatusBadge}
+              ${timeDiffText}
+            </div>
+            <div>
+              ${matchType === 'none' ? `
+                <button class="btn btn-sm btn-primary" onclick="manualMatch('${crown?.gid}', '${isports?.match_id}')">
+                  <i class="ri-link"></i> 手动匹配
+                </button>
+              ` : `
+                <button class="btn btn-sm btn-danger" onclick="unmatch('${crown?.gid}', '${isports?.match_id}')">
+                  <i class="ri-link-unlink"></i> 取消匹配
+                </button>
+              `}
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- 皇冠赛事 -->
+            <div style="padding: 15px; background: rgba(59, 130, 246, 0.1); border-radius: 8px;">
+              <div style="font-weight: bold; margin-bottom: 10px; color: var(--primary);">
+                <i class="ri-trophy-line"></i> 皇冠
+              </div>
+              ${crown ? `
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">联赛</div>
+                  <div style="font-weight: 500;">${crown.league_zh}</div>
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">主队</div>
+                  <div style="font-weight: 500;">${crown.home_zh}</div>
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">客队</div>
+                  <div style="font-weight: 500;">${crown.away_zh}</div>
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">时间</div>
+                  <div style="font-weight: 500;">${formatTime(crown.match_time)}</div>
+                </div>
+                <div>
+                  <div style="font-size: 14px; color: var(--text-muted);">GID</div>
+                  <div style="font-size: 12px; font-family: monospace;">${crown.gid}</div>
+                </div>
+              ` : '<div style="color: var(--text-muted); text-align: center; padding: 20px;">无数据</div>'}
+            </div>
+
+            <!-- iSports 赛事 -->
+            <div style="padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+              <div style="font-weight: bold; margin-bottom: 10px; color: var(--secondary);">
+                <i class="ri-database-2-line"></i> iSports
+              </div>
+              ${isports ? `
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">联赛</div>
+                  <div style="font-weight: 500;">${isports.league_name_cn || isports.league_name_en}</div>
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">主队</div>
+                  <div style="font-weight: 500;">${isports.home_team_cn || isports.home_team_en}</div>
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">客队</div>
+                  <div style="font-weight: 500;">${isports.away_team_cn || isports.away_team_en}</div>
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="font-size: 14px; color: var(--text-muted);">时间</div>
+                  <div style="font-weight: 500;">${formatTime(isports.match_time)}</div>
+                </div>
+                <div>
+                  <div style="font-size: 14px; color: var(--text-muted);">Match ID</div>
+                  <div style="font-size: 12px; font-family: monospace;">${isports.match_id}</div>
+                </div>
+              ` : '<div style="color: var(--text-muted); text-align: center; padding: 20px;">无数据</div>'}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // 筛选赛事对比数据
+    function filterMatchCompare() {
+      const filterType = document.getElementById('compare-filter').value;
+      const leagueFilter = document.getElementById('compare-league-filter').value.toLowerCase();
+
+      filteredCompareData = matchCompareData.filter(item => {
+        // 匹配状态筛选
+        if (filterType === 'ai-matched' && item.matchType !== 'ai') return false;
+        if (filterType === 'manual-matched' && item.matchType !== 'manual') return false;
+        if (filterType === 'unmatched' && item.matchType !== 'none') return false;
+
+        // 联赛筛选
+        if (leagueFilter) {
+          const crownLeague = (item.crown?.league_zh || '').toLowerCase();
+          const isportsLeague = (item.isports?.league_name_cn || item.isports?.league_name_en || '').toLowerCase();
+          if (!crownLeague.includes(leagueFilter) && !isportsLeague.includes(leagueFilter)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      renderMatchCompare();
+    }
+
+    // 手动匹配
+    async function manualMatch(crownGid, isportsMatchId) {
+      if (!confirm('确定要手动匹配这两场赛事吗？')) return;
+
+      try {
+        const res = await fetch('/api/match-compare/manual-match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ crownGid, isportsMatchId })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          alert('匹配成功！');
+          loadMatchCompareData();
+        } else {
+          alert('匹配失败: ' + data.error);
+        }
+      } catch (error) {
+        console.error('手动匹配失败:', error);
+        alert('匹配失败: ' + error.message);
+      }
+    }
+
+    // 取消匹配
+    async function unmatch(crownGid, isportsMatchId) {
+      if (!confirm('确定要取消匹配吗？')) return;
+
+      try {
+        const res = await fetch('/api/match-compare/unmatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ crownGid, isportsMatchId })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          alert('已取消匹配！');
+          loadMatchCompareData();
+        } else {
+          alert('取消失败: ' + data.error);
+        }
+      } catch (error) {
+        console.error('取消匹配失败:', error);
+        alert('取消失败: ' + error.message);
+      }
+    }
+
+    // 导出 Excel
+    async function exportMatchCompare() {
+      try {
+        const showType = document.getElementById('compare-type').value;
+        const timeRange = document.getElementById('compare-time-range').value;
+
+        const params = new URLSearchParams({
+          showType,
+          timeRange
+        });
+
+        window.location.href = `/api/match-compare/export?${params}`;
+      } catch (error) {
+        console.error('导出失败:', error);
+        alert('导出失败: ' + error.message);
       }
     }
 

@@ -3532,6 +3532,25 @@
     // 渲染单个对比项
     function renderCompareItem(item) {
       const { crown, isports, matchType, confidence, timeDiff } = item;
+      const canSaveMapping = matchType !== 'none' && crown && isports;
+      const mappingPayload = canSaveMapping ? encodeURIComponent(JSON.stringify({
+        crown: {
+          league_zh: crown?.league_zh || '',
+          home_zh: crown?.home_zh || '',
+          away_zh: crown?.away_zh || '',
+        },
+        isports: {
+          league_name_en: isports?.league_name_en || '',
+          league_name_cn: isports?.league_name_cn || '',
+          league_name_tc: isports?.league_name_tc || '',
+          team_home_en: isports?.team_home_en || '',
+          team_home_cn: isports?.team_home_cn || '',
+          team_home_tc: isports?.team_home_tc || '',
+          team_away_en: isports?.team_away_en || '',
+          team_away_cn: isports?.team_away_cn || '',
+          team_away_tc: isports?.team_away_tc || '',
+        }
+      })) : '';
 
       const matchStatusBadge = matchType === 'ai'
         ? `<span class="badge badge-success">AI 匹配 (${Math.round(confidence * 100)}%)</span>`
@@ -3560,6 +3579,11 @@
                   <i class="ri-link-unlink"></i> 取消匹配
                 </button>
               `}
+              ${canSaveMapping ? `
+                <button class="btn btn-sm btn-success" data-payload="${mappingPayload}" onclick="saveMappingFromMatch(this)" style="margin-left: 10px;">
+                  <i class="ri-database-2-line"></i> 一键入库
+                </button>
+              ` : ''}
             </div>
           </div>
 
@@ -3676,6 +3700,51 @@
       } catch (error) {
         console.error('手动匹配失败:', error);
         alert('匹配失败: ' + error.message);
+      }
+    }
+
+    // 一键入库
+    async function saveMappingFromMatch(button) {
+      if (!button?.dataset?.payload) {
+        alert('缺少映射数据');
+        return;
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(decodeURIComponent(button.dataset.payload));
+      } catch (error) {
+        console.error('解析映射数据失败:', error);
+        alert('解析映射数据失败');
+        return;
+      }
+
+      if (!payload.crown || !payload.isports) {
+        alert('映射数据不完整');
+        return;
+      }
+
+      if (!confirm('确定将该场赛事的球队和联赛名称写入映射并标记为已验证吗？')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/match-compare/save-mapping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          alert('入库成功！');
+          loadMatchCompareData();
+        } else {
+          alert('入库失败: ' + data.error);
+        }
+      } catch (error) {
+        console.error('入库失败:', error);
+        alert('入库失败: ' + error.message);
       }
     }
 

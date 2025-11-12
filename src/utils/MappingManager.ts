@@ -366,8 +366,8 @@ export class MappingManager {
    * 根据 iSports 名称查找映射
    */
   async findMappingByISportsName(
-    isportsEn: string,
-    isportsCn: string,
+    isportsEn?: string,
+    isportsCn?: string,
     isportsTc?: string
   ): Promise<TeamMapping | null> {
     const targets = buildNameVariants(isportsEn, isportsCn, isportsTc);

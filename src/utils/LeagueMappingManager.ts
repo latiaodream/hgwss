@@ -400,8 +400,8 @@ export class LeagueMappingManager {
    * 根据 iSports 名称查找映射
    */
   async findMappingByISportsName(
-    isportsEn: string,
-    isportsCn: string,
+    isportsEn?: string,
+    isportsCn?: string,
     isportsTc?: string
   ): Promise<LeagueMapping | null> {
     const targets = buildNameVariants(isportsEn, isportsCn, isportsTc);

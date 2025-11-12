@@ -563,6 +563,126 @@ router.post('/unmatch', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/match-compare/save-mapping
+ * 将当前匹配的联赛/球队名称写入映射，并标记已验证
+ */
+router.post('/save-mapping', async (req: Request, res: Response) => {
+  try {
+    const { crown, isports } = req.body || {};
+
+    if (!crown || !isports) {
+      return res.status(400).json({
+        success: false,
+        error: '缺少 crown 或 isports 数据',
+      });
+    }
+
+    const operations: Record<string, any> = {
+      teams: [],
+      league: null,
+    };
+
+    const ensureValue = (...values: (string | undefined)[]) => {
+      for (const value of values) {
+        if (value && value.trim()) return value.trim();
+      }
+      return '';
+    };
+
+    // 联赛映射
+    const leagueNameCn = ensureValue(isports.league_name_cn, isports.league_name_en, crown.league_zh);
+    if (leagueNameCn) {
+      const existingLeague = await leagueMappingManager.findMappingByISportsName(
+        isports.league_name_en,
+        isports.league_name_cn,
+        isports.league_name_tc
+      );
+
+      if (existingLeague) {
+        const updated = await leagueMappingManager.updateMapping(existingLeague.id, {
+          crown_cn: crown.league_zh || existingLeague.crown_cn,
+          isports_tc: isports.league_name_tc || existingLeague.isports_tc,
+          verified: true,
+        });
+        operations.league = { type: 'update', id: existingLeague.id, updated };
+      } else {
+        const created = await leagueMappingManager.createMapping({
+          isports_en: ensureValue(isports.league_name_en, isports.league_name_cn, crown.league_zh),
+          isports_cn: leagueNameCn,
+          isports_tc: isports.league_name_tc,
+          crown_cn: ensureValue(crown.league_zh, leagueNameCn),
+          verified: true,
+        });
+        operations.league = { type: 'create', id: created.id };
+      }
+    }
+
+    // 球队映射 helper
+    const upsertTeam = async (
+      isportsEn?: string,
+      isportsCn?: string,
+      isportsTc?: string,
+      crownCn?: string
+    ) => {
+      const fallbackCn = ensureValue(isportsCn, crownCn, isportsEn);
+      if (!fallbackCn) return null;
+
+      const existing = await teamMappingManager.findMappingByISportsName(
+        isportsEn,
+        isportsCn,
+        isportsTc
+      );
+
+      if (existing) {
+        await teamMappingManager.updateMapping(existing.id, {
+          crown_cn: crownCn || existing.crown_cn,
+          isports_tc: isportsTc || existing.isports_tc,
+          verified: true,
+        });
+        return { type: 'update', id: existing.id };
+      }
+
+      const created = await teamMappingManager.createMapping({
+        isports_en: ensureValue(isportsEn, fallbackCn),
+        isports_cn: fallbackCn,
+        isports_tc: isportsTc,
+        crown_cn: ensureValue(crownCn, fallbackCn),
+        verified: true,
+      });
+      return { type: 'create', id: created.id };
+    };
+
+    const homeOp = await upsertTeam(
+      isports.team_home_en,
+      isports.team_home_cn,
+      isports.team_home_tc,
+      crown.home_zh
+    );
+
+    const awayOp = await upsertTeam(
+      isports.team_away_en,
+      isports.team_away_cn,
+      isports.team_away_tc,
+      crown.away_zh
+    );
+
+    operations.teams = [homeOp, awayOp].filter(Boolean);
+
+    res.json({
+      success: true,
+      message: '映射已写入',
+      operations,
+    });
+  } catch (error: any) {
+    logger.error('保存映射失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
  * GET /api/match-compare/export
  * 导出 Excel
  */

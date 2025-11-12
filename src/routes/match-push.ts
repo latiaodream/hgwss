@@ -70,102 +70,76 @@ function isTimeClose(time1: string, time2: string, toleranceMinutes: number = 30
 }
 
 /**
+ * 计算时间差（分钟）
+ */
+function getTimeDiff(time1: string, time2: string): number {
+  try {
+    const date1 = new Date(time1);
+    const date2 = new Date(time2);
+    const diffMs = Math.abs(date1.getTime() - date2.getTime());
+    return diffMs / (1000 * 60);
+  } catch (error) {
+    return Infinity;
+  }
+}
+
+/**
  * 通过映射查找匹配的 iSports 赛事
+ * 新逻辑：优先匹配联赛，然后在同一联赛内通过时间匹配赛事
  */
 async function findMatchingISportsMatch(
   crownMatch: Match,
   isportsMatches: ISportsMatch[]
 ): Promise<{ match: ISportsMatch | null; matchedBy: 'team' | 'league' | 'both' | 'time' | null }> {
   try {
-    // 1. 查找球队映射
-    const homeMapping = await teamMappingManager.findMappingByCrownName(crownMatch.home_zh);
-    const awayMapping = await teamMappingManager.findMappingByCrownName(crownMatch.away_zh);
-
-    // 2. 查找联赛映射
+    // 1. 查找联赛映射
     const leagueMapping = await leagueMappingManager.findMappingByCrownName(crownMatch.league_zh);
 
-    logger.debug(`[MatchPush] 查找映射: ${crownMatch.home_zh} vs ${crownMatch.away_zh} @ ${crownMatch.match_time}`);
-    logger.debug(`[MatchPush] 主队映射: ${homeMapping?.isports_en || '未找到'}`);
-    logger.debug(`[MatchPush] 客队映射: ${awayMapping?.isports_en || '未找到'}`);
+    logger.debug(`[MatchPush] 查找映射: ${crownMatch.league_zh} | ${crownMatch.home_zh} vs ${crownMatch.away_zh} @ ${crownMatch.match_time}`);
     logger.debug(`[MatchPush] 联赛映射: ${leagueMapping?.isports_en || '未找到'}`);
 
-    // 3. 在 iSports 数据中查找匹配
+    // 如果没有联赛映射，无法匹配
+    if (!leagueMapping) {
+      logger.debug(`[MatchPush] 未找到联赛映射: ${crownMatch.league_zh}`);
+      return { match: null, matchedBy: null };
+    }
+
+    // 2. 筛选出同一联赛的 iSports 赛事
+    const sameLeagueMatches = isportsMatches.filter(isportsMatch => {
+      return isportsMatch.league_name_en === leagueMapping.isports_en ||
+             isportsMatch.league_name_cn === leagueMapping.isports_cn;
+    });
+
+    if (sameLeagueMatches.length === 0) {
+      logger.debug(`[MatchPush] 未找到同联赛的 iSports 赛事: ${leagueMapping.isports_en}`);
+      return { match: null, matchedBy: null };
+    }
+
+    logger.debug(`[MatchPush] 找到 ${sameLeagueMatches.length} 场同联赛赛事`);
+
+    // 3. 在同一联赛内，找时间最接近的赛事
     let bestMatch: ISportsMatch | null = null;
-    let bestMatchType: 'team' | 'league' | 'both' | 'time' | null = null;
-    let bestMatchScore = 0; // 匹配分数：both=3, team+time=2.5, team=2, league+time=1.5, league=1, time=0.5
+    let bestTimeDiff = Infinity;
 
-    for (const isportsMatch of isportsMatches) {
-      let teamMatched = false;
-      let leagueMatched = false;
-      let timeMatched = false;
-      let matchScore = 0;
+    for (const isportsMatch of sameLeagueMatches) {
+      const timeDiff = getTimeDiff(crownMatch.match_time, isportsMatch.match_time);
 
-      // 检查球队是否匹配
-      if (homeMapping && awayMapping) {
-        const homeMatch =
-          isportsMatch.team_home_en === homeMapping.isports_en ||
-          isportsMatch.team_home_cn === homeMapping.isports_cn;
+      logger.debug(`[MatchPush] 比较: ${isportsMatch.team_home_cn} vs ${isportsMatch.team_away_cn} @ ${isportsMatch.match_time}, 时间差: ${timeDiff.toFixed(1)} 分钟`);
 
-        const awayMatch =
-          isportsMatch.team_away_en === awayMapping.isports_en ||
-          isportsMatch.team_away_cn === awayMapping.isports_cn;
-
-        teamMatched = homeMatch && awayMatch;
-        if (teamMatched) matchScore += 2;
-      }
-
-      // 检查联赛是否匹配
-      if (leagueMapping) {
-        leagueMatched =
-          isportsMatch.league_name_en === leagueMapping.isports_en ||
-          isportsMatch.league_name_cn === leagueMapping.isports_cn;
-
-        if (leagueMatched) matchScore += 1;
-      }
-
-      // 检查时间是否接近（30分钟误差）
-      timeMatched = isTimeClose(crownMatch.match_time, isportsMatch.match_time, 30);
-      if (timeMatched) matchScore += 0.5;
-
-      // 如果球队和联赛都匹配，且时间也接近，这是最佳匹配
-      if (teamMatched && leagueMatched && timeMatched) {
-        logger.info(`[MatchPush] 完全匹配（含时间）: ${crownMatch.home_zh} vs ${crownMatch.away_zh} @ ${crownMatch.match_time}`);
-        return { match: isportsMatch, matchedBy: 'both' };
-      }
-
-      // 如果球队和联赛都匹配（即使时间不完全一致）
-      if (teamMatched && leagueMatched) {
-        logger.info(`[MatchPush] 完全匹配: ${crownMatch.home_zh} vs ${crownMatch.away_zh}`);
-        return { match: isportsMatch, matchedBy: 'both' };
-      }
-
-      // 记录最佳匹配
-      if (matchScore > bestMatchScore) {
-        bestMatchScore = matchScore;
+      // 如果时间差在 30 分钟内，且是目前最接近的
+      if (timeDiff <= 30 && timeDiff < bestTimeDiff) {
+        bestTimeDiff = timeDiff;
         bestMatch = isportsMatch;
-
-        if (teamMatched && timeMatched) {
-          bestMatchType = 'team';
-        } else if (teamMatched) {
-          bestMatchType = 'team';
-        } else if (leagueMatched && timeMatched) {
-          bestMatchType = 'league';
-        } else if (leagueMatched) {
-          bestMatchType = 'league';
-        } else if (timeMatched) {
-          bestMatchType = 'time';
-        }
       }
     }
 
-    // 返回最佳匹配（如果有）
-    if (bestMatch && bestMatchScore >= 2) {
-      // 只有球队匹配（分数>=2）才认为是有效匹配
-      logger.info(`[MatchPush] 找到匹配: ${crownMatch.home_zh} vs ${crownMatch.away_zh} (类型: ${bestMatchType}, 分数: ${bestMatchScore})`);
-      return { match: bestMatch, matchedBy: bestMatchType };
+    // 4. 返回最佳匹配
+    if (bestMatch) {
+      logger.info(`[MatchPush] 匹配成功: ${crownMatch.league_zh} | ${crownMatch.home_zh} vs ${crownMatch.away_zh} → ${bestMatch.team_home_cn} vs ${bestMatch.team_away_cn} (时间差: ${bestTimeDiff.toFixed(1)} 分钟)`);
+      return { match: bestMatch, matchedBy: 'league' };
     }
 
-    logger.debug(`[MatchPush] 未找到匹配: ${crownMatch.home_zh} vs ${crownMatch.away_zh} (最高分数: ${bestMatchScore})`);
+    logger.debug(`[MatchPush] 未找到时间接近的赛事 (最小时间差: ${bestTimeDiff.toFixed(1)} 分钟)`);
     return { match: null, matchedBy: null };
   } catch (error: any) {
     logger.error(`[MatchPush] 查找匹配失败:`, error.message);

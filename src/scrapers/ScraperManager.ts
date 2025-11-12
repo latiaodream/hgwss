@@ -236,13 +236,13 @@ export class ScraperManager extends EventEmitter {
       });
 
       // 存储到数据库
-      logger.debug(`[${showType}] 数据库保存检查: useDatabase=${this.useDatabase}, matches.length=${matches.length}`);
+      logger.info(`[${showType}] 🔍 数据库保存检查: useDatabase=${this.useDatabase}, matches.length=${matches.length}`);
 
       if (this.useDatabase && matches.length > 0) {
         try {
-          logger.debug(`[${showType}] 开始转换数据格式...`);
+          logger.info(`[${showType}] 📝 开始转换数据格式...`);
           const crownMatches = this.convertToCrownMatches(matches, showType);
-          logger.debug(`[${showType}] 转换完成，准备保存 ${crownMatches.length} 场赛事...`);
+          logger.info(`[${showType}] 📝 转换完成，准备保存 ${crownMatches.length} 场赛事...`);
 
           const saved = await this.crownMatchRepository.upsertBatch(crownMatches);
           logger.info(`[${showType}] ✅ 保存 ${saved} 场赛事到数据库`);
@@ -253,7 +253,7 @@ export class ScraperManager extends EventEmitter {
       } else if (!this.useDatabase) {
         logger.warn(`[${showType}] ⚠️ useDatabase=false，跳过数据库保存`);
       } else if (matches.length === 0) {
-        logger.debug(`[${showType}] 没有赛事数据，跳过数据库保存`);
+        logger.info(`[${showType}] ℹ️ 没有赛事数据，跳过数据库保存`);
       }
 
       // 检测变化并发送事件

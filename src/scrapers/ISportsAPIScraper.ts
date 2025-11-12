@@ -186,27 +186,32 @@ export class ISportsAPIScraper {
             match.team_away_cn = detail.awayName;
             match.team_away_en = detail.awayName;
 
-            // iSportsAPI 返回的时间戳是 UTC 时间
-            // 我们需要将其标记为 GMT-4 格式，但保持实际时间值不变
-            // 例如：UTC 19:00 应该存储为 19:00-04:00（表示 GMT-4 时区的 19:00，对应 UTC 23:00）
-            // 这样前端加 4 小时后会显示 23:00（中国时间次日 07:00）
+            // iSportsAPI 返回的时间戳需要转换为与皇冠一致的格式
+            // 前端 formatTime 逻辑：Date 对象 + 4小时，然后 getUTCHours()
+            // 要让前端显示 15:00，Date 对象应该是 UTC 11:00
+            // 所以存储格式应该让 new Date() 解析后得到 UTC 11:00
             const matchTimeMs = detail.matchTime * 1000;
-            const matchDate = new Date(matchTimeMs);
+            const matchDateUTC = new Date(matchTimeMs);
 
-            // 直接使用 UTC 时间构造 GMT-4 格式的字符串
-            const year = matchDate.getUTCFullYear();
-            const month = String(matchDate.getUTCMonth() + 1).padStart(2, '0');
-            const day = String(matchDate.getUTCDate()).padStart(2, '0');
-            const hour = String(matchDate.getUTCHours()).padStart(2, '0');
-            const minute = String(matchDate.getUTCMinutes()).padStart(2, '0');
-            const second = String(matchDate.getUTCSeconds()).padStart(2, '0');
+            // iSports API 返回的时间戳减去 8 小时（UTC 转为 GMT-4 的显示时间）
+            // 例如：API 返回 UTC 15:00，减 8 小时得到 07:00
+            // 存储为 07:00-04:00，解析为 Date 对象是 UTC 11:00
+            // 前端加 4 小时后显示 15:00
+            const adjustedDate = new Date(matchTimeMs - 8 * 60 * 60 * 1000);
+
+            const year = adjustedDate.getUTCFullYear();
+            const month = String(adjustedDate.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(adjustedDate.getUTCDate()).padStart(2, '0');
+            const hour = String(adjustedDate.getUTCHours()).padStart(2, '0');
+            const minute = String(adjustedDate.getUTCMinutes()).padStart(2, '0');
+            const second = String(adjustedDate.getUTCSeconds()).padStart(2, '0');
 
             match.match_time = `${year}-${month}-${day}T${hour}:${minute}:${second}-04:00`;
 
             // 根据比赛时间和状态判断类型（使用 GMT-4 时间）
             const now = new Date();
             const nowGMT4 = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-            const matchTimeGMT4 = new Date(matchDate.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+            const matchTimeGMT4 = new Date(matchDateUTC.toLocaleString('en-US', { timeZone: 'America/New_York' }));
             const todayEndGMT4 = new Date(nowGMT4);
             todayEndGMT4.setHours(23, 59, 59, 999);
 

@@ -496,9 +496,10 @@ export class CrownScraper {
   }
 
   /**
-   * 获取赛事列表
+   * 获取赛事列表（可指定日期）
+   * @param date 日期字符串，格式：YYYY-MM-DD，留空表示当前
    */
-  async fetchMatches(): Promise<Match[]> {
+  async fetchMatches(date?: string): Promise<Match[]> {
     if (this.shouldSkipBecauseSuspended('get_game_list')) {
       return [];
     }
@@ -528,7 +529,7 @@ export class CrownScraper {
           langx: 'zh-cn',
           p: 'get_game_list',
           p3type: '',
-          date: '',
+          date: date || '', // 使用传入的日期参数
           gtype: 'ft', // 足球
           showtype: showTypeParam.showtype,
           rtype: showTypeParam.rtype,

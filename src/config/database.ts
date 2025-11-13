@@ -50,9 +50,6 @@ export async function initDatabase(): Promise<void> {
   try {
     await client.query('BEGIN');
 
-    // 启用 uuid 扩展
-    await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
-
     // 创建球队映射表
     await client.query(`
       CREATE TABLE IF NOT EXISTS team_mappings (
@@ -183,7 +180,7 @@ export async function initDatabase(): Promise<void> {
     // 创建赛事历史表
     await client.query(`
       CREATE TABLE IF NOT EXISTS match_history (
-        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        id BIGSERIAL PRIMARY KEY,
         match_id VARCHAR(100) NOT NULL,
         source VARCHAR(20) NOT NULL,
         snapshot_date DATE NOT NULL,

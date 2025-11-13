@@ -2,7 +2,7 @@ import { pool } from '../config/database';
 import { logger } from '../utils/logger';
 
 export interface MatchHistory {
-  id?: string;
+  id?: number;
   match_id: string;
   source: 'crown' | 'isports' | 'oddsapi';
   snapshot_date: string; // YYYY-MM-DD

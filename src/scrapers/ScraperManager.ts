@@ -199,7 +199,7 @@ export class ScraperManager extends EventEmitter {
       }
     }
 
-    // 为每个类型设置独立的抓取定时器（每5秒一次）
+    // 为每个类型设置独立的抓取定时器
     for (const showType of this.showTypeQueue) {
       // 立即执行一次
       await this.fetchType(showType);
@@ -207,7 +207,7 @@ export class ScraperManager extends EventEmitter {
       // 设置定时任务
       const timer = setInterval(async () => {
         await this.fetchType(showType);
-      }, 5000);
+      }, this.getInterval(showType) * 1000);
 
       this.intervals.set(showType, timer);
     }
@@ -534,11 +534,11 @@ export class ScraperManager extends EventEmitter {
   private getInterval(showType: ShowType): number {
     switch (showType) {
       case 'live':
-        return parseInt(process.env.LIVE_FETCH_INTERVAL || '2');
+        return parseInt(process.env.LIVE_FETCH_INTERVAL || '10');
       case 'today':
-        return parseInt(process.env.TODAY_FETCH_INTERVAL || '10');
+        return parseInt(process.env.TODAY_FETCH_INTERVAL || '60');
       case 'early':
-        return parseInt(process.env.EARLY_FETCH_INTERVAL || '30');
+        return parseInt(process.env.EARLY_FETCH_INTERVAL || '3600');
       default:
         return 10;
     }

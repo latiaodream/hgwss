@@ -1681,6 +1681,8 @@
     let crownPagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
     let crownFilters = { type: 'live', search: '' };
     let crownSearchTimer = null;
+    let crownAutoRefreshTimer = null;
+    let currentPage = 'dashboard';
 
     // 页面切换
     document.querySelectorAll('.nav-item').forEach(item => {
@@ -1694,20 +1696,25 @@
         // 切换页面
         document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
         document.getElementById(`page-${page}`).style.display = 'block';
+        currentPage = page;
 
         // 加载对应数据
-        if (page === 'thirdparty') loadThirdPartyData('live');
+        if (page === 'thirdparty') {
+          stopCrownAutoRefresh();
+          loadThirdPartyData('live');
+        }
         else if (page === 'crown') {
           if (!crownFilters.type) crownFilters.type = 'live';
           document.getElementById('crown-filter-type').value = crownFilters.type;
           setCrownTypeHighlight(crownFilters.type);
           refreshCrown();
+          startCrownAutoRefresh();
         }
-        else if (page === 'mapping') loadMappingData();
-        else if (page === 'league-mapping') loadLeagueMappingData();
-        else if (page === 'match-push') loadMatchPushData();
-        else if (page === 'match-compare') loadMatchCompareData();
-        else if (page === 'dashboard') loadDashboard();
+        else if (page === 'mapping') { stopCrownAutoRefresh(); loadMappingData(); }
+        else if (page === 'league-mapping') { stopCrownAutoRefresh(); loadLeagueMappingData(); }
+        else if (page === 'match-push') { stopCrownAutoRefresh(); loadMatchPushData(); }
+        else if (page === 'match-compare') { stopCrownAutoRefresh(); loadMatchCompareData(); }
+        else if (page === 'dashboard') { stopCrownAutoRefresh(); loadDashboard(); }
       });
     });
 
@@ -2090,6 +2097,29 @@
       }
     }
 
+    function isCrownPageVisible() {
+      return currentPage === 'crown';
+    }
+
+    function startCrownAutoRefresh() {
+      stopCrownAutoRefresh();
+      if (crownFilters.type !== 'live') return;
+      if (!isCrownPageVisible()) return;
+
+      crownAutoRefreshTimer = setInterval(() => {
+        if (!isCrownPageVisible() || crownFilters.type !== 'live') return;
+        loadCrownStats();
+        loadCrownData();
+      }, 10000);
+    }
+
+    function stopCrownAutoRefresh() {
+      if (crownAutoRefreshTimer) {
+        clearInterval(crownAutoRefreshTimer);
+        crownAutoRefreshTimer = null;
+      }
+    }
+
     // 渲染皇冠数据表格
     function renderCrownTable() {
       const container = document.getElementById('crown-matches');
@@ -2224,6 +2254,8 @@
       crownPagination.page = 1;
       setCrownTypeHighlight(type);
       loadCrownData();
+      if (type === 'live') startCrownAutoRefresh();
+      else stopCrownAutoRefresh();
     }
 
     function setCrownTypeHighlight(type) {
@@ -2244,6 +2276,8 @@
       crownPagination.page = 1;
       setCrownTypeHighlight(crownFilters.type);
       loadCrownData();
+      if (crownFilters.type === 'live') startCrownAutoRefresh();
+      else stopCrownAutoRefresh();
     }
 
     function handleCrownSearch() {
@@ -3211,6 +3245,10 @@
     async function refreshCrown() {
       await loadCrownStats();
       await loadCrownData();
+      if (isCrownPageVisible()) {
+        if (crownFilters.type === 'live') startCrownAutoRefresh();
+        else stopCrownAutoRefresh();
+      }
     }
 
     // 工具函数

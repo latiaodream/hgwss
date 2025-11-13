@@ -42,6 +42,10 @@ export class ScraperManager extends EventEmitter {
     logger.info(`[ScraperManager] useDatabase 设置为: ${useDatabase}`);
   }
 
+  isUsingDatabase(): boolean {
+    return this.useDatabase;
+  }
+
   /**
    * 初始化缓存
    */

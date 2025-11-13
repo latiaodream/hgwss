@@ -1,19 +1,24 @@
 import { Router, Request, Response } from 'express';
 import { logger } from '../utils/logger';
+import { CrownMatchRepository } from '../repositories/CrownMatchRepository';
+import { ScraperManager } from '../scrapers/ScraperManager';
 
 const router = Router();
 
-// 存储 ScraperManager 实例
-let scraperManager: any = null;
+let scraperManager: ScraperManager | null = null;
+const crownMatchRepository = new CrownMatchRepository();
 
-export function setScraperManager(manager: any) {
+export function setScraperManager(manager: ScraperManager) {
   scraperManager = manager;
   logger.info('[Routes] setScraperManager 被调用');
 }
 
-// 获取所有赛事
 router.get('/', async (req: Request, res: Response) => {
   try {
+    const { showType, search } = req.query;
+    const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize as string) || 50, 1), 200);
+
     if (!scraperManager) {
       return res.status(503).json({
         success: false,
@@ -21,22 +26,36 @@ router.get('/', async (req: Request, res: Response) => {
       });
     }
 
-    const { showType } = req.query;
-
-    let matches: any[] = [];
-
-    if (showType && typeof showType === 'string') {
-      // 获取特定类型的赛事
-      matches = scraperManager.getMatches(showType as any);
+    let result;
+    if (scraperManager.isUsingDatabase()) {
+      result = await crownMatchRepository.paginate({
+        showType: typeof showType === 'string' ? showType : undefined,
+        search: typeof search === 'string' ? search : undefined,
+        page,
+        pageSize,
+      });
     } else {
-      // 获取所有赛事
-      matches = scraperManager.getAllMatches();
+      let matches: any[] = [];
+      if (showType && typeof showType === 'string') {
+        matches = scraperManager.getMatches(showType as any);
+      } else {
+        matches = scraperManager.getAllMatches();
+      }
+      result = {
+        data: matches.slice((page - 1) * pageSize, page * pageSize),
+        total: matches.length,
+      };
     }
 
     res.json({
       success: true,
-      data: matches,
-      count: matches.length,
+      data: result.data,
+      pagination: {
+        page,
+        pageSize,
+        total: result.total,
+        totalPages: Math.ceil(result.total / pageSize) || 1,
+      },
     });
   } catch (error: any) {
     logger.error('[API] 获取赛事失败:', error.message);
@@ -92,20 +111,23 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
       });
     }
 
-    const stats: any = {
-      total: 0,
-      byType: {
-        live: 0,
-        today: 0,
-        early: 0,
-      },
-    };
-
-    // 获取各类型赛事数量
-    stats.byType.live = scraperManager.getMatches('live').length;
-    stats.byType.today = scraperManager.getMatches('today').length;
-    stats.byType.early = scraperManager.getMatches('early').length;
-    stats.total = stats.byType.live + stats.byType.today + stats.byType.early;
+    let stats: any;
+    if (scraperManager.isUsingDatabase()) {
+      stats = await crownMatchRepository.getStatistics();
+    } else {
+      stats = {
+        total: 0,
+        byType: {
+          live: 0,
+          today: 0,
+          early: 0,
+        },
+      };
+      stats.byType.live = scraperManager.getMatches('live').length;
+      stats.byType.today = scraperManager.getMatches('today').length;
+      stats.byType.early = scraperManager.getMatches('early').length;
+      stats.total = stats.byType.live + stats.byType.today + stats.byType.early;
+    }
 
     res.json({
       success: true,
@@ -121,4 +143,3 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
 });
 
 export default router;
-

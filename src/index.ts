@@ -14,7 +14,9 @@ import thirdpartyRouter, { setThirdPartyManager } from './routes/thirdparty';
 import matchesRouter, { setScraperManager } from './routes/matches';
 import matchPushRouter, { setManagers as setMatchPushManagers } from './routes/match-push';
 import matchCompareRouter, { setManagers as setMatchCompareManagers } from './routes/match-compare';
+import historyRouter from './routes/history';
 import { testConnection, initDatabase, closeDatabase } from './config/database';
+import { MatchHistoryService } from './services/MatchHistoryService';
 
 // 加载环境变量
 dotenv.config();
@@ -28,6 +30,8 @@ class Application {
   private wsServer?: WSServer;
   private httpServer?: http.Server;
   private expressApp: express.Application;
+  private historyService?: MatchHistoryService;
+  private databaseReady: boolean = false;
 
   constructor() {
     this.scraperManager = new ScraperManager();
@@ -53,6 +57,7 @@ class Application {
     this.expressApp.use('/api/matches', matchesRouter);
     this.expressApp.use('/api/match-push', matchPushRouter);
     this.expressApp.use('/api/match-compare', matchCompareRouter);
+    this.expressApp.use('/api/history', historyRouter);
 
     // 页面路由
     this.expressApp.get('/', (req, res) => {
@@ -102,9 +107,13 @@ class Application {
       logger.info('✅ 数据库连接成功');
       await initDatabase();
       logger.info('✅ 数据库表初始化完成');
+      this.databaseReady = true;
       this.scraperManager.setUseDatabase(true);
+      this.historyService = new MatchHistoryService();
+      this.historyService.start();
     } else {
       logger.warn('⚠️ 数据库连接失败，将使用 JSON 文件存储');
+      this.databaseReady = false;
       this.scraperManager.setUseDatabase(false);
     }
 
@@ -170,6 +179,7 @@ class Application {
       isportsApiKey,
       fetchInterval
     );
+    this.thirdPartyManager.setUseDatabase(this.databaseReady);
 
     // 设置到路由中
     setThirdPartyManager(this.thirdPartyManager);
@@ -351,11 +361,15 @@ class Application {
         });
       }
 
-      // 5. 关闭数据库连接
-      logger.info('5️⃣ 关闭数据库连接...');
+      // 5. 停止历史记录服务
+      logger.info('5️⃣ 停止历史记录服务...');
+      this.historyService?.stop();
+
+      // 6. 关闭数据库连接
+      logger.info('6️⃣ 关闭数据库连接...');
       await closeDatabase();
 
-      // 6. 删除 PID 文件
+      // 7. 删除 PID 文件
       this.removePidFile();
 
       logger.info('✅ 服务已安全关闭');

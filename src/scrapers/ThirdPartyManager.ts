@@ -49,6 +49,11 @@ export class ThirdPartyManager extends EventEmitter {
     logger.info('[ThirdPartyManager] 初始化完成');
   }
 
+  setUseDatabase(useDatabase: boolean): void {
+    this.useDatabase = useDatabase;
+    logger.info(`[ThirdPartyManager] useDatabase 设置为: ${useDatabase}`);
+  }
+
   /**
    * 启动定时抓取
    */

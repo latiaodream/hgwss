@@ -50,6 +50,9 @@ export async function initDatabase(): Promise<void> {
   try {
     await client.query('BEGIN');
 
+    // 启用 uuid 扩展
+    await client.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+
     // 创建球队映射表
     await client.query(`
       CREATE TABLE IF NOT EXISTS team_mappings (
@@ -177,6 +180,28 @@ export async function initDatabase(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_thirdparty_matches_updated_at ON thirdparty_matches(updated_at)
     `);
 
+    // 创建赛事历史表
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS match_history (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        match_id VARCHAR(100) NOT NULL,
+        source VARCHAR(20) NOT NULL,
+        snapshot_date DATE NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(match_id, source, snapshot_date)
+      )
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_match_history_date ON match_history(snapshot_date)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_match_history_source ON match_history(source)
+    `);
+
     await client.query('COMMIT');
     logger.info('[Database] 数据库表初始化成功');
   } catch (error: any) {
@@ -193,4 +218,3 @@ export async function closeDatabase(): Promise<void> {
   await pool.end();
   logger.info('[Database] 数据库连接池已关闭');
 }
-

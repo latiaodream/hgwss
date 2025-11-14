@@ -1,0 +1,26 @@
+{
+  "endpoint": "wss://gw.xbetbot.com/?lang=zh-CN",
+  "token": "aRb08HVwWVNXNkJ1Q1A2aTVnd25MX1g5Q0g2UXNJVnpIeDhYbVhrajVMTlpLRZxkEl2Udkwu_mGV2iqYRVZNnDDjuTHjnkYMwbkg67xr",
+  "username": "latiao",
+  "password": "latiao2025",
+  "subscriptions": ["matches", "odds", "live"],
+  "heartbeatIntervalMs": 30000,
+  "redis": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 6379,
+    "password": "",
+    "db": 0,
+    "prefix": "xbet"
+  },
+  "internalWs": {
+    "enabled": true,
+    "port": 18081
+  },
+  "dashboard": {
+    "enabled": true,
+    "port": 18082,
+    "title": "XBet 数据监控面板",
+    "publicDir": "./public/dashboard"
+  }
+}

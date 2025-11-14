@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XBet 实时监控</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand__logo">智投</div>
+      <div>
+        <h1 id="appTitle">XBet 数据监控</h1>
+        <p class="brand__desc">实时校验赛事、赔率、滚球推送</p>
+      </div>
+    </div>
+    <div class="status-panel">
+      <div class="status-panel__item">
+        <span class="status-panel__label">连接状态</span>
+        <span id="connectionState" class="badge badge--danger">未连接</span>
+      </div>
+      <div class="status-panel__item">
+        <span class="status-panel__label">最新数据</span>
+        <span id="lastUpdate" class="status-panel__value">--</span>
+      </div>
+      <button id="refreshBtn" class="btn btn--ghost">手动刷新</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="filters">
+      <div class="filter-group">
+        <label for="searchInput">快速搜索</label>
+        <input type="search" id="searchInput" placeholder="输入球队/联赛/赛事 ID" />
+      </div>
+      <div class="filter-group inline">
+        <label>数据类型</label>
+        <div class="chip-group" id="datasetToggles">
+          <label class="chip">
+            <input type="checkbox" data-kind="matches" checked />
+            <span>赛事</span>
+          </label>
+          <label class="chip">
+            <input type="checkbox" data-kind="odds" checked />
+            <span>赔率</span>
+          </label>
+          <label class="chip">
+            <input type="checkbox" data-kind="live" checked />
+            <span>滚球</span>
+          </label>
+        </div>
+      </div>
+      <div class="filter-group inline">
+        <label>其他</label>
+        <label class="chip">
+          <input type="checkbox" id="liveOnly" />
+          <span>仅看滚球赛事</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="stats" id="statsPanel">
+      <article class="stat-card">
+        <p>赛事数量</p>
+        <strong id="statMatches">0</strong>
+      </article>
+      <article class="stat-card">
+        <p>赔率数量</p>
+        <strong id="statOdds">0</strong>
+      </article>
+      <article class="stat-card">
+        <p>滚球场次</p>
+        <strong id="statLive">0</strong>
+      </article>
+    </section>
+
+    <section class="dataset" data-kind="matches">
+      <div class="dataset__header">
+        <h2>☆ 赛事概览</h2>
+        <span id="matchesCount">0 条</span>
+      </div>
+      <div id="matchesContainer" class="dataset__body"></div>
+    </section>
+
+    <section class="dataset" data-kind="odds">
+      <div class="dataset__header">
+        <h2>☆ 赔率推送</h2>
+        <span id="oddsCount">0 条</span>
+      </div>
+      <div id="oddsContainer" class="dataset__body"></div>
+    </section>
+
+    <section class="dataset" data-kind="live">
+      <div class="dataset__header">
+        <h2>☆ 滚球 / 实时比分</h2>
+        <span id="liveCount">0 条</span>
+      </div>
+      <div id="liveContainer" class="dataset__body"></div>
+    </section>
+  </main>
+
+  <template id="noDataTemplate">
+    <div class="empty">
+      <p>暂无数据，可等待推送或点击“手动刷新”。</p>
+    </div>
+  </template>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

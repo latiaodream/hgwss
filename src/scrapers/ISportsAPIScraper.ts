@@ -70,8 +70,6 @@ export class ISportsAPIScraper {
         'Content-Type': 'application/json',
       },
     });
-
-    logger.info('[ISportsAPI] 初始化完成');
   }
 
   /**
@@ -89,46 +87,25 @@ export class ISportsAPIScraper {
       if (response.data?.code === 0 && response.data?.data) {
         const data = response.data.data[0];
 
-        logger.info(`[ISportsAPI] 繁体语言包数据结构: ${JSON.stringify(Object.keys(data))}`);
-
         // 缓存联赛繁体名称
         if (data.leagues) {
-          let leagueCount = 0;
           data.leagues.forEach((league: any) => {
-            // 确保 ID 转换为字符串
             const leagueId = String(league.leagueId);
             this.tcLanguageCache.set(`league_${leagueId}`, league.name_tc);
-            leagueCount++;
           });
-          logger.info(`[ISportsAPI] 缓存了 ${leagueCount} 个联赛繁体名称`);
-          // 显示前几个示例
-          const examples = data.leagues.slice(0, 3).map((l: any) => `${l.leagueId}:${l.name_tc}`).join(', ');
-          logger.info(`[ISportsAPI] 联赛示例: ${examples}`);
-        } else {
-          logger.warn('[ISportsAPI] 繁体语言包中没有 leagues 字段');
         }
 
         // 缓存球队繁体名称
         if (data.teams) {
-          let teamCount = 0;
           data.teams.forEach((team: any) => {
-            // 确保 ID 转换为字符串
             const teamId = String(team.teamId);
             this.tcLanguageCache.set(`team_${teamId}`, team.name_tc);
-            teamCount++;
           });
-          logger.info(`[ISportsAPI] 缓存了 ${teamCount} 个球队繁体名称`);
-          // 显示前几个示例
-          const examples = data.teams.slice(0, 3).map((t: any) => `${t.teamId}:${t.name_tc}`).join(', ');
-          logger.info(`[ISportsAPI] 球队示例: ${examples}`);
-        } else {
-          logger.warn('[ISportsAPI] 繁体语言包中没有 teams 字段');
         }
-
-        logger.info(`[ISportsAPI] 繁体中文语言包加载完成，共 ${this.tcLanguageCache.size} 条`);
       }
     } catch (error: any) {
-      logger.error('[ISportsAPI] 获取繁体中文语言包失败:', error.message);
+      // 保留错误处理，但不输出 ISportsAPI 前缀日志
+      logger.error('获取繁体中文语言包失败:', error.message);
     }
   }
 
@@ -156,14 +133,11 @@ export class ISportsAPIScraper {
 
       if (allMatches.length === 0) {
         const cached = this.getAllMatches();
-        logger.warn(
-          `[ISportsAPI] 本次抓取返回 0 场赛事，保留旧缓存 ${cached.length} 场`
-        );
+        // 保留旧缓存，以避免前端数据瞬间清空
         return cached;
       }
 
-      logger.info(`[ISportsAPI] fetchOddsMatches 返回 ${allMatches.length} 场赛事`);
-      logger.info(`[ISportsAPI] 更新缓存前 matchesCache.size = ${this.matchesCache.size}`);
+      // 这里不再输出 ISportsAPI 相关的详细日志
 
       // 清空旧缓存
       this.matchesCache.clear();
@@ -172,7 +146,6 @@ export class ISportsAPIScraper {
       let leagueTCCount = 0;
       let teamHomeTCCount = 0;
       let teamAwayTCCount = 0;
-      let firstMatchLogged = false;
 
       allMatches.forEach(match => {
         // 添加繁体中文名称
@@ -188,36 +161,17 @@ export class ISportsAPIScraper {
           if (match.team_away_tc) teamAwayTCCount++;
         }
 
-        // 记录第一场赛事的详细信息用于调试
-        if (!firstMatchLogged) {
-          logger.info(`[ISportsAPI] 第一场赛事调试信息:`);
-          logger.info(`  - league_id: ${match.league_id} (类型: ${typeof match.league_id})`);
-          logger.info(`  - league_name_cn: ${match.league_name_cn}`);
-          logger.info(`  - league_name_tc: ${match.league_name_tc || '未找到'}`);
-          logger.info(`  - team_home_id: ${match.team_home_id} (类型: ${typeof match.team_home_id})`);
-          logger.info(`  - team_home_cn: ${match.team_home_cn}`);
-          logger.info(`  - team_home_tc: ${match.team_home_tc || '未找到'}`);
-          logger.info(`  - 缓存 key 查询: league_${String(match.league_id)}, team_${String(match.team_home_id)}`);
-          firstMatchLogged = true;
-        }
-
         this.matchesCache.set(match.match_id, match);
       });
-
-      logger.info(`[ISportsAPI] 繁体匹配统计: 联赛 ${leagueTCCount}/${allMatches.length}, 主队 ${teamHomeTCCount}/${allMatches.length}, 客队 ${teamAwayTCCount}/${allMatches.length}`);
-
-      logger.info(`[ISportsAPI] 更新缓存后 matchesCache.size = ${this.matchesCache.size}`);
 
       // 统计各类型赛事数量
       const liveCount = allMatches.filter(m => m.status === 'live').length;
       const todayCount = allMatches.filter(m => m.status === 'today').length;
       const earlyCount = allMatches.filter(m => m.status === 'early').length;
 
-      logger.info(`[ISportsAPI] 抓取完成: 滚球 ${liveCount}, 今日 ${todayCount}, 早盘 ${earlyCount}`);
-
       return allMatches;
     } catch (error: any) {
-      logger.error('[ISportsAPI] 抓取失败:', error.message);
+      logger.error('ISportsAPI 抓取失败:', error.message);
       throw error;
     }
   }
@@ -260,7 +214,7 @@ export class ISportsAPIScraper {
       });
 
       if (response.data.code !== 0) {
-        logger.error(`[ISportsAPI] 赔率API返回错误: ${JSON.stringify(response.data)}`);
+        logger.error(`ISportsAPI 赔率API返回错误: ${JSON.stringify(response.data)}`);
         return [];
       }
 
@@ -271,11 +225,8 @@ export class ISportsAPIScraper {
       const matchIds = Array.from(matchesMap.keys());
 
       if (matchIds.length === 0) {
-        logger.info(`[ISportsAPI] 没有皇冠赔率数据`);
         return [];
       }
-
-      logger.info(`[ISportsAPI] 皇冠赔率赛事: ${matchIds.length} 场`);
 
       // 3. 批量获取赛事详情（每次最多100个）
       const matches: ISportsMatch[] = [];
@@ -351,7 +302,7 @@ export class ISportsAPIScraper {
 
       return matches;
     } catch (error: any) {
-      logger.error(`[ISportsAPI] 获取赔率数据失败: ${error.message}`);
+      logger.error(`ISportsAPI 获取赔率数据失败: ${error.message}`);
       return [];
     }
   }
@@ -370,13 +321,13 @@ export class ISportsAPIScraper {
       });
 
       if (response.data.code !== 0) {
-        logger.warn(`[ISportsAPI] 获取赛事详情失败: ${response.data.message}`);
+        logger.warn(`ISportsAPI 获取赛事详情失败: ${response.data.message}`);
         return [];
       }
 
       return response.data.data || [];
     } catch (error: any) {
-      logger.error(`[ISportsAPI] 获取赛事详情异常: ${error.message}`);
+      logger.error(`ISportsAPI 获取赛事详情异常: ${error.message}`);
       return [];
     }
   }
@@ -535,18 +486,13 @@ export class ISportsAPIScraper {
         this.matchesCache.set(match.match_id, match);
       }
     });
-
-    logger.info(`[ISportsAPI] hydrateCache(): 恢复 ${matches.length} 场赛事`);
   }
 
   /**
    * 获取所有缓存的赛事
    */
   getAllMatches(): ISportsMatch[] {
-    logger.info(`[ISportsAPI] getAllMatches() 被调用`);
-    logger.info(`[ISportsAPI] matchesCache.size = ${this.matchesCache.size}`);
     const matches = Array.from(this.matchesCache.values());
-    logger.info(`[ISportsAPI] getAllMatches() 返回 ${matches.length} 场赛事`);
     return matches;
   }
 }

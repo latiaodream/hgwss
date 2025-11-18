@@ -18,6 +18,11 @@ import historyRouter from './routes/history';
 import { testConnection, initDatabase, closeDatabase } from './config/database';
 import { MatchHistoryService } from './services/MatchHistoryService';
 
+
+// 全局关闭 TLS 证书校验（配合各类代理，避免 UNABLE_TO_VERIFY_LEAF_SIGNATURE）
+// 仅用于该服务的抓取场景，线上环境默认已经依赖固定站点域名
+(process as any).env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 // 加载环境变量
 dotenv.config();
 

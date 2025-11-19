@@ -57,13 +57,25 @@ export class CrownScraper {
     // 增加超时时间，避免频繁超时
     const timeout = parseInt(process.env.API_TIMEOUT_MS || '60000', 10);
 
+    // 优化：启用 Keep-Alive
+    const httpsAgent = new https.Agent({
+      rejectUnauthorized: false,
+      keepAlive: true,
+      keepAliveMsecs: 1000,
+      maxSockets: 256,
+      maxFreeSockets: 256,
+      scheduling: 'lifo',
+      timeout: timeout
+    });
+
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: timeout, // 默认60秒，可通过环境变量配置
-      httpsAgent: proxyAgent || new https.Agent({ rejectUnauthorized: false }),
+      httpsAgent: proxyAgent || httpsAgent,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': userAgent
+        'User-Agent': userAgent,
+        'Connection': 'keep-alive'
       },
     });
 
@@ -223,8 +235,8 @@ export class CrownScraper {
 
     // 内置备用域名（仅在未配置环境变量时使用）
     const builtins = [
-      'https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga038.com','https://hga039.com','https://hga050.com',
-      'https://mos011.com','https://mos022.com','https://mos033.com','https://mos055.com','https://mos066.com','https://mos100.com'
+      'https://hga026.com', 'https://hga027.com', 'https://hga030.com', 'https://hga035.com', 'https://hga038.com', 'https://hga039.com', 'https://hga050.com',
+      'https://mos011.com', 'https://mos022.com', 'https://mos033.com', 'https://mos055.com', 'https://mos066.com', 'https://mos100.com'
     ];
     return builtins;
   }
@@ -244,7 +256,7 @@ export class CrownScraper {
    */
   private resolveSiteUrlCandidates(): string[] {
     const single = process.env.CROWN_SITE_URL ? [process.env.CROWN_SITE_URL.trim()] : [];
-    const envs = process.env.CROWN_SITE_URL_CANDIDATES ? process.env.CROWN_SITE_URL_CANDIDATES.split(',').map(s=>s.trim()).filter(Boolean) : [];
+    const envs = process.env.CROWN_SITE_URL_CANDIDATES ? process.env.CROWN_SITE_URL_CANDIDATES.split(',').map(s => s.trim()).filter(Boolean) : [];
 
     // 如果明确配置了 CROWN_SITE_URL 或 CROWN_SITE_URL_CANDIDATES，则不使用内置备用域名
     if (single.length > 0 || envs.length > 0) {
@@ -256,8 +268,8 @@ export class CrownScraper {
 
     // 内置备用域名（仅在未配置环境变量时使用）
     const builtins = [
-      'https://hga026.com','https://hga027.com','https://hga030.com','https://hga035.com','https://hga038.com','https://hga039.com','https://hga050.com',
-      'https://mos011.com','https://mos022.com','https://mos033.com','https://mos055.com','https://mos066.com','https://mos100.com'
+      'https://hga026.com', 'https://hga027.com', 'https://hga030.com', 'https://hga035.com', 'https://hga038.com', 'https://hga039.com', 'https://hga050.com',
+      'https://mos011.com', 'https://mos022.com', 'https://mos033.com', 'https://mos055.com', 'https://mos066.com', 'https://mos100.com'
     ];
     return builtins;
   }
@@ -452,8 +464,8 @@ export class CrownScraper {
 
         // XML 解析失败 / HTML 检测页等情况，也视为当前域名不可用，切换下一个候选域名
         if (errorMsg.includes('HTML_RESPONSE_NOT_XML') ||
-            errorMsg.includes('Invalid character in entity name') ||
-            errorMsg.includes('Unencoded <')) {
+          errorMsg.includes('Invalid character in entity name') ||
+          errorMsg.includes('Unencoded <')) {
           logger.warn(`[${this.account.showType}] 当前域名返回非预期 XML，尝试切换下一个基础域名...`);
           this.switchToNextBaseUrl();
           continue;
@@ -1595,10 +1607,10 @@ export class CrownScraper {
       includeLid?: boolean;
       langx?: string;
     }> = [
-      { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn' },
-      { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn' },
-      { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn' },
-    ];
+        { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn' },
+        { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn' },
+        { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn' },
+      ];
 
     if (ecid) {
       base.push({ label: 'ecid only zh-cn', useEcid: true, useGid: false, includeLid: false, langx: 'zh-cn' });

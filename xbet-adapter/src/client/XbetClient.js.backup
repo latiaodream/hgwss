@@ -1,0 +1,304 @@
+import { EventEmitter } from 'node:events';
+import WebSocket from 'ws';
+import { EphemeralKey } from '../crypto/p256.js';
+import { RC4 } from '../crypto/rc4.js';
+import { DagCborDecoder } from '../cbor/dagCborDecoder.js';
+import { encodeDagCbor } from '../cbor/dagCborEncoder.js';
+
+export class XbetClient extends EventEmitter {
+  constructor(options) {
+    super();
+    this.endpoint = options.endpoint;
+    this.auth = {
+      token: options.token,
+      username: options.username,
+      password: options.password
+    };
+    this.origin = options.origin || '';
+    this.wsHeaders = { ...(options.wsHeaders || {}) };
+    this.ws = null;
+    this.ephemeral = null;
+    this.rc4 = null;
+
+    // 新协议：RPC 请求管理
+    this.reqs = new Map();  // 存储待响应的请求: reqId -> [reqId, opcode, payload, resolve, timer, sent]
+    this.reqId = 0;         // 自增请求 ID
+    this.defaultTimeout = options.timeout || 20000;  // 默认 20 秒超时
+
+    // 保留旧的订阅和心跳配置（可能在新协议中不再使用）
+    this.subscriptions = [...new Set(options.subscriptions || [])];
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs || 30_000;
+    this.heartbeatTimer = null;
+    this.authenticated = false;
+  }
+
+  async connect() {
+    if (this.ws) {
+      this.ws.close();
+    }
+    this.ephemeral = await new EphemeralKey().generate();
+    const headers = Object.fromEntries(
+      Object.entries(this.wsHeaders).filter(([, value]) => typeof value === 'string' && value.length)
+    );
+    const wsOptions = {
+      perMessageDeflate: true,
+      handshakeTimeout: 10000,
+    };
+    if (this.origin) {
+      wsOptions.origin = this.origin;
+    }
+    if (Object.keys(headers).length) {
+      wsOptions.headers = headers;
+    }
+    this.ws = new WebSocket(this.endpoint, wsOptions);
+    this.ws.binaryType = 'arraybuffer';
+    this.ws.on('open', () => this.#handleOpen());
+    this.ws.on('error', (err) => this.emit('error', err));
+    this.ws.on('close', (code, reason) => {
+      const closeEvent = { code, reason: this.#decodeReason(reason) };
+      this.emit('close', closeEvent);
+    });
+    this.ws.on('message', (data) => this.#handleRawMessage(data));
+  }
+
+  #handleOpen() {
+    const frame = this.ephemeral.buildClientHelloFrame();
+    this.ws.send(frame);
+    this.emit('handshakeSent');
+  }
+
+  #decodeReason(reason) {
+    if (!reason) return '';
+    if (typeof reason === 'string') return reason;
+    if (reason instanceof ArrayBuffer) {
+      return Buffer.from(reason).toString('utf-8');
+    }
+    if (ArrayBuffer.isView(reason)) {
+      return Buffer.from(reason.buffer, reason.byteOffset, reason.byteLength).toString('utf-8');
+    }
+    if (Buffer.isBuffer(reason)) {
+      return reason.toString('utf-8');
+    }
+    return String(reason);
+  }
+
+  async #handleRawMessage(data) {
+    const payload = this.#toUint8Array(data);
+    if (!this.rc4) {
+      await this.#handleServerHandshake(payload);
+      return;
+    }
+    const decrypted = this.rc4.process(payload);
+    try {
+      const decoder = new DagCborDecoder(decrypted);
+      const message = decoder.decode();
+      this.#handleDecodedMessage(message);
+    } catch (err) {
+      this.emit('decodeError', { err, raw: decrypted });
+    }
+  }
+
+  async #handleServerHandshake(data) {
+    if (data.length < 65) {
+      throw new Error('服务器握手数据异常');
+    }
+    const serverKey = data.slice(0, 65);
+    const sharedSecret = await this.ephemeral.deriveSharedSecret(serverKey);
+    this.rc4 = new RC4(sharedSecret);
+    this.emit('sessionReady');
+    const rest = data.slice(65);
+    if (rest.length) {
+      try {
+        const decoder = new DagCborDecoder(rest);
+        const message = decoder.decode();
+        this.#handleDecodedMessage(message);
+      } catch (err) {
+        this.emit('decodeError', { err, raw: rest });
+      }
+    }
+    await this.#authenticate();
+  }
+
+  #toUint8Array(data) {
+    if (!data) {
+      return new Uint8Array();
+    }
+    if (data instanceof Uint8Array) {
+      return data;
+    }
+    if (data instanceof ArrayBuffer) {
+      return new Uint8Array(data);
+    }
+    if (ArrayBuffer.isView(data)) {
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (typeof data === 'string') {
+      return new TextEncoder().encode(data);
+    }
+    return new Uint8Array(data);
+  }
+
+  async #authenticate() {
+    // 新协议：握手后不再发送 typ:0 认证消息
+    // 直接标记为已认证，等待服务器的初始消息
+    console.log('[adapter] 握手完成，等待服务器响应');
+    this.authenticated = true;
+    this.emit('authenticated', { code: 0 });
+  }
+
+  /**
+   * 新协议：RPC 请求方法
+   * @param {number} opcode - 操作码 (0x1, 0x5, 0x7, 0xb, 0x17 等)
+   * @param {object} payload - 请求参数
+   * @param {number} timeout - 超时时间（毫秒），0 表示不超时
+   * @returns {Promise<[number, any]>} - [status, data]，status: 0=成功, 1=失败
+   */
+  async request(opcode, payload = {}, timeout = this.defaultTimeout) {
+    return new Promise((resolve) => {
+      const reqId = ++this.reqId & 0xffffffff;  // 32 位循环
+
+      let timer = null;
+      if (timeout > 0) {
+        timer = setTimeout(() => {
+          this.reqs.delete(reqId);
+          resolve([1, 'err_timeout']);
+        }, timeout);
+      }
+
+      // 存储请求上下文: [reqId, opcode, payload, resolve, timer, sent]
+      const req = [reqId, opcode, payload, resolve, timer, false];
+      this.reqs.set(reqId, req);
+
+      // 如果 RC4 已就绪，立即发送
+      if (this.rc4) {
+        this.#sendRequest(req);
+      }
+    });
+  }
+
+  /**
+   * 发送 RPC 请求
+   * @private
+   */
+  #sendRequest(req) {
+    const [reqId, opcode, payload] = req;
+
+    // 新协议消息格式: [reqId, opcode, payload]
+    const message = [reqId, opcode, payload];
+
+    try {
+      const encoded = encodeDagCbor(message);
+      const encrypted = this.rc4.process(encoded);
+      this.ws.send(encrypted);
+      req[5] = true;  // 标记为已发送
+
+      this.emit('requestSent', { reqId, opcode, payload });
+    } catch (err) {
+      // 发送失败，清理请求
+      const [, , , resolve, timer] = req;
+      if (timer) clearTimeout(timer);
+      this.reqs.delete(reqId);
+      resolve([1, err.message]);
+    }
+  }
+
+  /**
+   * 旧协议兼容：直接发送对象（已废弃，建议使用 request）
+   * @deprecated
+   */
+  async send(obj) {
+    if (!this.rc4) {
+      throw new Error('RC4 尚未初始化');
+    }
+    const encoded = encodeDagCbor(obj);
+    const encrypted = this.rc4.process(encoded);
+    this.ws.send(encrypted);
+  }
+
+  /**
+   * 旧协议兼容：订阅（新协议可能不再使用）
+   * @deprecated
+   */
+  async subscribe(subscriptions = this.subscriptions) {
+    const unique = [...new Set(subscriptions)].filter(Boolean);
+    this.subscriptions = unique;
+    if (!unique.length) return;
+    // 旧协议: { typ: 1, data: [...] }
+    // 新协议可能需要改为 request(OPCODE_SUBSCRIBE, { topics: [...] })
+    await this.send({ typ: 1, data: unique });
+  }
+
+  /**
+   * 启动心跳（新协议使用 opcode 0x5）
+   */
+  startHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
+    if (this.heartbeatIntervalMs <= 0) return;
+
+    this.heartbeatTimer = setInterval(() => {
+      // 新协议：使用 opcode 0x5 发送心跳
+      this.request(0x5, {}, 5000).catch((err) => {
+        this.emit('error', err);
+      });
+    }, this.heartbeatIntervalMs);
+  }
+
+  stop() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  #handleDecodedMessage(message) {
+    this.emit('raw', message);
+    if (!message || typeof message !== 'object') {
+      // XBet 新协议里，握手后可能返回一个单独的数字 0，这里尝试视为“认证成功”
+      if (message === 0) {
+        this.authenticated = true;
+        this.emit('authenticated', { code: 0 });
+        if (this.subscriptions.length) {
+          this.subscribe().catch((err) => this.emit('error', err));
+        }
+        this.startHeartbeat();
+        return;
+      }
+      this.emit('message', message);
+      return;
+    }
+
+    switch (message.typ) {
+      case 0:
+        this.authenticated = true;
+        this.emit('authenticated', message.data || {});
+        if (this.subscriptions.length) {
+          this.subscribe().catch((err) => this.emit('error', err));
+        }
+        this.startHeartbeat();
+        break;
+      case 1:
+        this.emit('subscribed', message.data || {});
+        break;
+      case 2:
+        this.emit('heartbeat', message.data || {});
+        break;
+      case 3:
+        this.emit('data', message);
+        if (message.kind) {
+          this.emit(`data:${message.kind}`, message.data);
+        }
+        break;
+      case 5:
+        this.emit('errorMessage', message);
+        break;
+      default:
+        this.emit('message', message);
+    }
+  }
+}

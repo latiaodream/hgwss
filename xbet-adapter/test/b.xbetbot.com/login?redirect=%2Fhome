@@ -1,0 +1,13 @@
+  (function() {
+    const orig = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function(data, ...rest) {
+      try {
+        if (Array.isArray(data) && data[1] === 7 && data[2] && data[2].did) {
+          console.log('LOGIN_PAYLOAD', JSON.stringify(data[2]));
+        }
+      } catch (err) {
+        console.warn('payload hook err', err);
+      }
+      return orig.call(this, data, ...rest);
+    };
+  })();

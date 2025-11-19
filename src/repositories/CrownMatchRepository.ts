@@ -257,73 +257,104 @@ export class CrownMatchRepository {
    * 替换指定类型的所有赛事
    * 先删除该类型的旧数据，再插入新的赛事列表
    */
+  /**
+   * 替换指定类型的所有赛事
+   * 先删除该类型的旧数据，再插入新的赛事列表
+   * 优化：使用 UNNEST 进行批量插入，大幅减少数据库交互次数
+   */
   async replaceByShowType(showType: string, matches: CrownMatch[]): Promise<number> {
+    if (matches.length === 0) {
+      // 如果没有数据，直接删除旧数据即可
+      try {
+        const result = await pool.query('DELETE FROM crown_matches WHERE show_type = $1', [showType]);
+        return 0;
+      } catch (error: any) {
+        logger.error(`[CrownMatchRepository] 清空 ${showType} 赛事失败:`, error.message);
+        throw error;
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
+      // 1. 删除旧数据
       await client.query('DELETE FROM crown_matches WHERE show_type = $1', [showType]);
 
-      let count = 0;
-      for (const match of matches) {
-        await client.query(
-          `INSERT INTO crown_matches (
-            gid, show_type, league, team_home, team_away, match_time,
-            handicap, handicap_home, handicap_away,
-            over_under, over, under,
-            home_win, draw, away_win,
-            strong, more, raw_data, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-          ON CONFLICT (gid) DO UPDATE SET
-            show_type = EXCLUDED.show_type,
-            league = EXCLUDED.league,
-            team_home = EXCLUDED.team_home,
-            team_away = EXCLUDED.team_away,
-            match_time = EXCLUDED.match_time,
-            handicap = EXCLUDED.handicap,
-            handicap_home = EXCLUDED.handicap_home,
-            handicap_away = EXCLUDED.handicap_away,
-            over_under = EXCLUDED.over_under,
-            over = EXCLUDED.over,
-            under = EXCLUDED.under,
-            home_win = EXCLUDED.home_win,
-            draw = EXCLUDED.draw,
-            away_win = EXCLUDED.away_win,
-            strong = EXCLUDED.strong,
-            more = EXCLUDED.more,
-            raw_data = EXCLUDED.raw_data,
-            updated_at = EXCLUDED.updated_at`,
-          [
-            match.gid,
-            match.show_type || showType,
-            match.league,
-            match.team_home,
-            match.team_away,
-            match.match_time,
-            match.handicap,
-            match.handicap_home,
-            match.handicap_away,
-            match.over_under,
-            match.over,
-            match.under,
-            match.home_win,
-            match.draw,
-            match.away_win,
-            match.strong,
-            match.more,
-            JSON.stringify(match.raw_data),
-            match.created_at || new Date().toISOString(),
-            new Date().toISOString(),
-          ]
-        );
-        count++;
-      }
+      // 2. 准备批量插入的数据
+      // 将对象数组转换为列数组，以便使用 UNNEST
+      const gids = matches.map(m => m.gid);
+      const showTypes = matches.map(m => m.show_type || showType);
+      const leagues = matches.map(m => m.league);
+      const teamHomes = matches.map(m => m.team_home);
+      const teamAways = matches.map(m => m.team_away);
+      const matchTimes = matches.map(m => m.match_time);
+      const handicaps = matches.map(m => m.handicap);
+      const handicapHomes = matches.map(m => m.handicap_home);
+      const handicapAways = matches.map(m => m.handicap_away);
+      const overUnders = matches.map(m => m.over_under);
+      const overs = matches.map(m => m.over);
+      const unders = matches.map(m => m.under);
+      const homeWins = matches.map(m => m.home_win);
+      const draws = matches.map(m => m.draw);
+      const awayWins = matches.map(m => m.away_win);
+      const strongs = matches.map(m => m.strong);
+      const mores = matches.map(m => m.more);
+      const rawDatas = matches.map(m => JSON.stringify(m.raw_data));
+      const createdAts = matches.map(m => m.created_at || new Date().toISOString());
+      const updatedAts = matches.map(() => new Date().toISOString());
+
+      // 3. 批量插入
+      // 使用 UNNEST 将数组解压为行，然后插入
+      const query = `
+        INSERT INTO crown_matches (
+          gid, show_type, league, team_home, team_away, match_time,
+          handicap, handicap_home, handicap_away,
+          over_under, over, under,
+          home_win, draw, away_win,
+          strong, more, raw_data, created_at, updated_at
+        )
+        SELECT * FROM UNNEST(
+          $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
+          $7::numeric[], $8::numeric[], $9::numeric[],
+          $10::numeric[], $11::numeric[], $12::numeric[],
+          $13::numeric[], $14::numeric[], $15::numeric[],
+          $16::text[], $17::text[], $18::jsonb[], $19::timestamp[], $20::timestamp[]
+        )
+        ON CONFLICT (gid) DO UPDATE SET
+          show_type = EXCLUDED.show_type,
+          league = EXCLUDED.league,
+          team_home = EXCLUDED.team_home,
+          team_away = EXCLUDED.team_away,
+          match_time = EXCLUDED.match_time,
+          handicap = EXCLUDED.handicap,
+          handicap_home = EXCLUDED.handicap_home,
+          handicap_away = EXCLUDED.handicap_away,
+          over_under = EXCLUDED.over_under,
+          over = EXCLUDED.over,
+          under = EXCLUDED.under,
+          home_win = EXCLUDED.home_win,
+          draw = EXCLUDED.draw,
+          away_win = EXCLUDED.away_win,
+          strong = EXCLUDED.strong,
+          more = EXCLUDED.more,
+          raw_data = EXCLUDED.raw_data,
+          updated_at = EXCLUDED.updated_at
+      `;
+
+      await client.query(query, [
+        gids, showTypes, leagues, teamHomes, teamAways, matchTimes,
+        handicaps, handicapHomes, handicapAways,
+        overUnders, overs, unders,
+        homeWins, draws, awayWins,
+        strongs, mores, rawDatas, createdAts, updatedAts
+      ]);
 
       await client.query('COMMIT');
-      return count;
+      return matches.length;
     } catch (error: any) {
       await client.query('ROLLBACK');
-      logger.error(`[CrownMatchRepository] 重置 ${showType} 赛事失败:`, error.message);
+      logger.error(`[CrownMatchRepository] 批量重置 ${showType} 赛事失败:`, error.message);
       throw error;
     } finally {
       client.release();

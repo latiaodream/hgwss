@@ -1484,12 +1484,30 @@ export class CrownScraper {
         return null;
       }
 
-      const gameContainer = data.game || data.GAME || data?.serverresponse?.game;
-      if (!gameContainer) {
-        return null;
-      }
+      const directGameContainer = data.game || data.GAME;
+      let games: any[] = [];
 
-      const games = Array.isArray(gameContainer) ? gameContainer : [gameContainer];
+      if (directGameContainer) {
+        games = Array.isArray(directGameContainer) ? directGameContainer : [directGameContainer];
+      } else {
+        const ecContainer = (data.ec || data.EC) as any;
+        if (!ecContainer) {
+          return null;
+        }
+        const ecs = Array.isArray(ecContainer) ? ecContainer : [ecContainer];
+        for (const ec of ecs) {
+          if (!ec) continue;
+          const ecGames = (ec.game || ec.GAME) as any;
+          if (Array.isArray(ecGames)) {
+            games.push(...ecGames);
+          } else if (ecGames) {
+            games.push(ecGames);
+          }
+        }
+        if (!games.length) {
+          return null;
+        }
+      }
 
       const markets: Markets = {
         full: { handicapLines: [], overUnderLines: [] },
@@ -1536,7 +1554,7 @@ export class CrownScraper {
         if (isCardOrCornerMarket(game)) continue;
 
         // 全场让球盘口 - 主盘口
-        const ratioR = pickString(game, ['RE', 'R', 'ratio']);
+        const ratioR = pickString(game, ['RATIO_RE', 'ratio_re', 'RE', 'R', 'ratio']);
         const iorRH = pickString(game, ['ior_REH', 'ior_RH']);
         const iorRC = pickString(game, ['ior_REC', 'ior_RC']);
 
@@ -1593,7 +1611,16 @@ export class CrownScraper {
         }
 
         // 全场大小球盘口 - 主盘口
-        const ratioO = pickString(game, ['ROU', 'OU', 'ratio_o', 'ratio_u']);
+        const ratioO = pickString(game, [
+          'RATIO_ROUO',
+          'RATIO_ROUU',
+          'ratio_rouo',
+          'ratio_rouu',
+          'ROU',
+          'OU',
+          'ratio_o',
+          'ratio_u',
+        ]);
         const iorOUH = pickString(game, ['ior_ROUH', 'ior_OUH']);
         const iorOUC = pickString(game, ['ior_ROUC', 'ior_OUC']);
 
@@ -1650,7 +1677,7 @@ export class CrownScraper {
         }
 
         // 半场让球盘口
-        const ratioHR = pickString(game, ['HRE', 'HR', 'hratio']);
+        const ratioHR = pickString(game, ['RATIO_HRE', 'ratio_hre', 'HRE', 'HR', 'hratio']);
         const iorHRH = pickString(game, ['ior_HREH', 'ior_HRH']);
         const iorHRC = pickString(game, ['ior_HREC', 'ior_HRC']);
 
@@ -1667,7 +1694,16 @@ export class CrownScraper {
         }
 
         // 半场大小球盘口
-        const ratioHO = pickString(game, ['HROU', 'HOU', 'hratio_o', 'hratio_u']);
+        const ratioHO = pickString(game, [
+          'RATIO_HROUO',
+          'RATIO_HROUU',
+          'ratio_hrouo',
+          'ratio_hrouu',
+          'HROU',
+          'HOU',
+          'hratio_o',
+          'hratio_u',
+        ]);
         const iorHOUH = pickString(game, ['ior_HROUH', 'ior_HOUH']);
         const iorHOUC = pickString(game, ['ior_HROUC', 'ior_HOUC']);
 

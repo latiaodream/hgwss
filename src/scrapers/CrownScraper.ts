@@ -1286,6 +1286,32 @@ export class CrownScraper {
         });
       }
     }
+    // 半场独赢（Half-time Moneyline）
+    const hmh = pick(['ior_hmh', 'ratio_hmh']);
+    const hmn = pick(['ior_hmn', 'ratio_hmn']);
+    const hmc = pick(['ior_hmc', 'ratio_hmc']);
+
+    if (hmh || hmn || hmc) {
+      const halfMoneyline = {
+        home: this.parseOddsValue(hmh),
+        draw: this.parseOddsValue(hmn),
+        away: this.parseOddsValue(hmc),
+      };
+
+      // 同时填充到 top-level 和 half 里，方便前端使用 markets.half.moneyline
+      markets.halfMoneyline = halfMoneyline;
+
+      if (markets.half) {
+        (markets.half as any).moneyline = halfMoneyline;
+      } else {
+        markets.half = {
+          handicapLines: [],
+          overUnderLines: [],
+          moneyline: halfMoneyline,
+        } as any;
+      }
+    }
+
 
     return markets;
   }

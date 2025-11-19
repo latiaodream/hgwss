@@ -49,6 +49,12 @@ export interface Markets {
   half?: {
     handicapLines?: HandicapLine[];
     overUnderLines?: OverUnderLine[];
+    moneyline?: {
+      home?: number;
+      draw?: number;
+      away?: number;
+    };
+
   };
   halfMoneyline?: {
     home?: number;

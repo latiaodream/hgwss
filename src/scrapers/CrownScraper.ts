@@ -857,6 +857,22 @@ export class CrownScraper {
 
             this.lastMoreMarketTs = Date.now();
 
+            // 调试：无论解析是否成功，都把原始文本截断后挂到 raw.moreMarketsRaw，方便排查
+            try {
+              let rawText: string | null = null;
+              if (typeof response.data === 'string') {
+                rawText = response.data;
+              } else if (Buffer.isBuffer(response.data)) {
+                rawText = response.data.toString('utf8');
+              }
+              if (rawText) {
+                (match as any).raw = (match as any).raw || {};
+                (match as any).raw.moreMarketsRaw = rawText.slice(0, 4000);
+              }
+            } catch {
+              // ignore
+            }
+
             const risk = this.detectRiskResponse(response.data);
             if (risk) {
               this.handleRiskyResponse(risk, `get_game_more/${match.showType}`);

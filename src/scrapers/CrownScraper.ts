@@ -1377,7 +1377,7 @@ export class CrownScraper {
         if (!game) continue;
         if (isCardOrCornerMarket(game)) continue;
 
-        // 全场让球盘口
+        // 全场让球盘口 - 主盘口
         const ratioR = pickString(game, ['RE', 'R', 'ratio']);
         const iorRH = pickString(game, ['ior_REH', 'ior_RH']);
         const iorRC = pickString(game, ['ior_REC', 'ior_RC']);
@@ -1394,7 +1394,47 @@ export class CrownScraper {
           }
         }
 
-        // 全场大小球盘口
+        // 全场让球盘口 - 更多盘 (ARE/BRE/CRE/DRE/ERE/FRE)
+        const reAltPrefixes = ['A', 'B', 'C', 'D', 'E', 'F'];
+        for (const prefix of reAltPrefixes) {
+          const swKey = `sw_${prefix}RE`;
+          const swValue = pickString(game, [swKey]);
+          if (swValue && swValue.toUpperCase() !== 'Y') {
+            continue;
+          }
+
+          const ratioAlt = pickString(game, [
+            `ratio_${prefix.toLowerCase()}re`,
+            `ratio_${prefix.toLowerCase()}r`,
+          ]);
+          const iorAltH = pickString(game, [
+            `ior_${prefix}REH`,
+          ]);
+          const iorAltC = pickString(game, [
+            `ior_${prefix}REC`,
+          ]);
+
+          if (!ratioAlt || (!iorAltH && !iorAltC)) {
+            continue;
+          }
+
+          const hdpAlt = this.parseHandicap(ratioAlt);
+          if (hdpAlt !== null) {
+            const homeVal = this.parseOddsValue(iorAltH);
+            const awayVal = this.parseOddsValue(iorAltC);
+            if (homeVal === undefined && awayVal === undefined) {
+              continue;
+            }
+            markets.full!.handicapLines = markets.full!.handicapLines || [];
+            markets.full!.handicapLines!.push({
+              hdp: hdpAlt,
+              home: homeVal || 0,
+              away: awayVal || 0,
+            });
+          }
+        }
+
+        // 全场大小球盘口 - 主盘口
         const ratioO = pickString(game, ['ROU', 'OU', 'ratio_o', 'ratio_u']);
         const iorOUH = pickString(game, ['ior_ROUH', 'ior_OUH']);
         const iorOUC = pickString(game, ['ior_ROUC', 'ior_OUC']);
@@ -1407,6 +1447,46 @@ export class CrownScraper {
               hdp,
               over: this.parseOddsValue(iorOUC) || 0,
               under: this.parseOddsValue(iorOUH) || 0,
+            });
+          }
+        }
+
+        // 全场大小球盘口 - 更多盘 (AROU/BROU/CROU/DROU/EROU/FROU)
+        const ouAltPrefixes = ['A', 'B', 'C', 'D', 'E', 'F'];
+        for (const prefix of ouAltPrefixes) {
+          const swKey = `sw_${prefix}ROU`;
+          const swValue = pickString(game, [swKey]);
+          if (swValue && swValue.toUpperCase() !== 'Y') {
+            continue;
+          }
+
+          const ratioAltO = pickString(game, [
+            `ratio_${prefix.toLowerCase()}rouo`,
+            `ratio_${prefix.toLowerCase()}rouu`,
+          ]);
+          const iorAltOUO = pickString(game, [
+            `ior_${prefix}ROUO`,
+          ]);
+          const iorAltOUU = pickString(game, [
+            `ior_${prefix}ROUU`,
+          ]);
+
+          if (!ratioAltO || (!iorAltOUO && !iorAltOUU)) {
+            continue;
+          }
+
+          const hdpAltO = this.parseHandicap(ratioAltO);
+          if (hdpAltO !== null) {
+            const underVal = this.parseOddsValue(iorAltOUO);
+            const overVal = this.parseOddsValue(iorAltOUU);
+            if (underVal === undefined && overVal === undefined) {
+              continue;
+            }
+            markets.full!.overUnderLines = markets.full!.overUnderLines || [];
+            markets.full!.overUnderLines!.push({
+              hdp: hdpAltO,
+              over: overVal || 0,
+              under: underVal || 0,
             });
           }
         }

@@ -736,7 +736,7 @@ export class ScraperManager extends EventEmitter {
       away_win: match.markets?.moneyline?.away,
       strong: undefined, // 需要从原始数据中提取
       more: undefined, // 需要从原始数据中提取
-      raw_data: match.raw || match,
+      raw_data: match,
     }));
   }
 }

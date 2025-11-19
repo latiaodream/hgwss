@@ -235,7 +235,7 @@
                 <div class="match-header">
                     <div class="home-team">${match.home || '主队'}</div>
                     <div class="match-center">
-                        <div class="league">${match.league || '联赛'}</div>
+                        <div class="league">${match.league || '联赛'}${match.gid ? ' [' + match.gid + ']' : ''}</div>
                         <div class="score">(${match.home_score || 0}-${match.away_score || 0})</div>
                         <div class="match-status">${match.match_time || '未开赛'}</div>
                     </div>

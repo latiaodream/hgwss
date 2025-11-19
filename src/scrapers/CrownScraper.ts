@@ -825,7 +825,8 @@ export class CrownScraper {
               isRB: isLive ? 'Y' : 'N',
               from: 'game_more',
               mode: 'NORMAL',
-              filter: 'Main', // 只拉主要盘口，响应更小，减少超时/断连
+              // live 用空 filter 拉全部滚球盘口，today/early 仍然只拉 Main
+              filter: isLive ? '' : 'Main',
               specialClick: '',
               ts: Date.now().toString(),
             });

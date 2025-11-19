@@ -288,7 +288,7 @@ export class CrownScraper {
     }
 
     // 直接使用默认版本号（皇冠首页需要 JS 跳转，无法直接获取版本号）
-    this.version = '2025-10-16-fix342_120';
+    this.version = '2025-11-06-phPasscodeBug_121';
     logger.debug(`[${this.account.showType}] 使用默认版本号: ${this.version}`);
   }
 

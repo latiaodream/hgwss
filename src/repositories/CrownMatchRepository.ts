@@ -315,11 +315,11 @@ export class CrownMatchRepository {
           strong, more, raw_data, created_at, updated_at
         )
         SELECT * FROM UNNEST(
-          $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
+          $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[],
           $7::numeric[], $8::numeric[], $9::numeric[],
           $10::numeric[], $11::numeric[], $12::numeric[],
           $13::numeric[], $14::numeric[], $15::numeric[],
-          $16::text[], $17::text[], $18::jsonb[], $19::timestamp[], $20::timestamp[]
+          $16::text[], $17::text[], $18::jsonb[], $19::timestamptz[], $20::timestamptz[]
         )
         ON CONFLICT (gid) DO UPDATE SET
           show_type = EXCLUDED.show_type,

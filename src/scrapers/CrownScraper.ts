@@ -1472,6 +1472,30 @@ export class CrownScraper {
     }
 
 
+    // 在离开前对盘口数组做一次去重，避免 get_game_list 自身产生的重复盘
+    const dedupeLines = <T>(arr?: T[]): T[] | undefined => {
+      if (!arr || !arr.length) return arr;
+      const seen = new Set<string>();
+      const result: T[] = [];
+      for (const item of arr) {
+        if (item == null) continue;
+        const key = JSON.stringify(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(item);
+      }
+      return result;
+    };
+
+    if (markets.full) {
+      markets.full.handicapLines = dedupeLines(markets.full.handicapLines);
+      markets.full.overUnderLines = dedupeLines(markets.full.overUnderLines);
+    }
+    if (markets.half) {
+      markets.half.handicapLines = dedupeLines(markets.half.handicapLines);
+      markets.half.overUnderLines = dedupeLines(markets.half.overUnderLines);
+    }
+
     return markets;
   }
 

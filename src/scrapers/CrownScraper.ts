@@ -885,6 +885,13 @@ export class CrownScraper {
             const serverResponse = parsed?.serverresponse || parsed;
             const markets = this.parseMoreMarkets(serverResponse);
             if (markets) {
+              // 调试用途：把更多盘口的原始返回也挂到 match.raw 里，方便通过 /api/matches/:gid 查看结构
+              try {
+                (match as any).raw = (match as any).raw || {};
+                (match as any).raw.moreMarkets = serverResponse;
+              } catch {
+                // ignore
+              }
               return markets;
             }
 

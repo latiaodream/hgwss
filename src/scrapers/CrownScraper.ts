@@ -743,11 +743,28 @@ export class CrownScraper {
       merged.moneyline = { ...(merged.moneyline || {}), ...incoming.moneyline };
     }
 
+    // 合并盘口数组时顺便去重，避免主盘口和更多盘口返回完全相同的行导致前端重复显示
     const mergeLineArray = <T>(target?: T[], addition?: T[]): T[] | undefined => {
-      if ((!target || target.length === 0) && (!addition || addition.length === 0)) {
+      const combined: T[] = [];
+      if (target && target.length) combined.push(...target);
+      if (addition && addition.length) combined.push(...addition);
+
+      if (!combined.length) {
         return target;
       }
-      return [...(target || []), ...(addition || [])];
+
+      const seen = new Set<string>();
+      const result: T[] = [];
+
+      for (const item of combined) {
+        if (item == null) continue;
+        const key = JSON.stringify(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(item);
+      }
+
+      return result;
     };
 
     if (incoming.full) {

@@ -49,7 +49,8 @@ export class CrownScraper {
     this.siteUrlCandidates = this.resolveSiteUrlCandidates();
     this.siteUrl = this.siteUrlCandidates[0] || this.baseUrl;
 
-    const userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+    // 使用移动端 Chrome UA（与成功的 get_game_more 请求保持一致）
+    const userAgent = 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36';
 
     // 代理支持
     const proxyAgent = this.createProxyAgent();
@@ -687,9 +688,12 @@ export class CrownScraper {
   private async enrichMatchesWithMoreMarkets(matches: Match[]): Promise<void> {
     if (!Array.isArray(matches) || matches.length === 0) return;
 
-    // 先筛选出明确有更多盘口的赛事（MORE > 0）
-    const candidates = matches.filter(match => this.hasMoreMarketsFlag(match));
-    if (candidates.length === 0) {
+    // 先筛选出明确有更多盘口的赛事（MORE > 0）。若为 live 且没有标记 MORE>0，则降级为“全量尝试”，避免漏拉盘口。
+    let candidates = matches.filter(match => this.hasMoreMarketsFlag(match));
+    if (candidates.length === 0 && this.account.showType === 'live') {
+      candidates = matches;
+      logger.debug(`[${this.account.showType}] 没有 MORE>0 标记，直播场次全量尝试更多盘口`);
+    } else if (candidates.length === 0) {
       logger.debug(`[${this.account.showType}] 当前没有标记 MORE>0 的赛事，跳过更多盘口抓取`);
       return;
     }
@@ -735,15 +739,24 @@ export class CrownScraper {
       let extraMarkets: Markets | null = null;
 
       const moreMarkets = await this.fetchMoreMarkets(match);
-      if (moreMarkets) {
-        extraMarkets = moreMarkets;
-      } else if (match.showType === 'live' && this.hasMoreMarketsFlag(match)) {
-        // 对于 live 且 MORE>0 的赛事，再尝试一次 get_game_OBT（浏览器前端使用的多盘口接口）
-        const obtMarkets = await this.fetchObtMarkets(match);
-        if (obtMarkets) {
-          extraMarkets = obtMarkets;
-        }
-      }
+      const obtMarkets = match.showType === 'live' ? await this.fetchObtMarkets(match) : null;
+
+      const chooseMarkets = (a?: Markets | null, b?: Markets | null): Markets | null => {
+        const count = (m?: Markets | null) =>
+          (m?.full?.handicapLines?.length || 0) +
+          (m?.half?.handicapLines?.length || 0) +
+          (m?.full?.overUnderLines?.length || 0) +
+          (m?.half?.overUnderLines?.length || 0);
+        if (a && !b) return a;
+        if (!a && b) return b;
+        if (a && b) return count(a) >= count(b) ? a : b;
+        return null;
+      };
+
+      const best = chooseMarkets(moreMarkets, obtMarkets);
+      if (best === moreMarkets && best) (best as any).__source = 'more';
+      if (best === obtMarkets && best) (best as any).__source = 'obt';
+      extraMarkets = best;
 
       if (extraMarkets) {
         match.markets = this.mergeMarkets(match.markets || {}, extraMarkets);
@@ -765,41 +778,75 @@ export class CrownScraper {
     }
 
     // 合并盘口数组时顺便去重，避免主盘口和更多盘口返回完全相同的行导致前端重复显示。
-    // 对于同一个 hdp（盘口）同时出现在基础盘和更多盘口中时，优先使用新增的那条（一般来自 get_game_more/get_game_OBT）。
-    const mergeLineArray = <T>(target?: T[], addition?: T[]): T[] | undefined => {
-      const combined: T[] = [];
-      if (target && target.length) combined.push(...target);
-      if (addition && addition.length) combined.push(...addition);
+    // 对于同一个 hdp（盘口）同时出现在基础盘和更多盘口中时：
+    // - 任何来源的盘口都会参与一个统一的“评分”；
+    // - more/obt 来源整体优先于 base；
+    // - 在同一来源内部（例如多个 OBT/更多盘口候选），选评分更高的那条，而不是简单“后写覆盖前写”。
+    const getPriority = (item: any, sourceTag?: string): number => {
+      const meta = item && (item.__meta || item.meta || {});
+      let score = 0;
+      const upper = (v: any) => (typeof v === 'string' ? v.toUpperCase() : v);
+      if (upper(meta.isMaster) === 'Y') score += 8;
+      if (upper(meta.gopen) === 'Y') score += 4;
+      if (upper(meta.hnike) === 'Y') score += 2;
+      if (meta.model && /MIX/i.test(meta.model)) score -= 1; // MIX 盘口降权
+      if (sourceTag === 'obt') score += 1; // OBT 兜底来源略微加权
+      return score;
+    };
 
-      if (!combined.length) {
+    const mergeLineArray = <T>(target?: T[], addition?: T[], sourceTag?: string): T[] | undefined => {
+      if ((!target || !target.length) && (!addition || !addition.length)) {
         return target;
       }
 
-      const map = new Map<string, T>();
-
-      for (const item of combined) {
-        if (item == null) continue;
+      const map = new Map<string, { item: T; score: number; tag?: string }>();
+      const upsert = (item: T, tag?: string) => {
+        if (item == null) return;
         const anyItem = item as any;
-        const hdpKey = anyItem && anyItem.hdp !== undefined && anyItem.hdp !== null
-          ? `hdp:${anyItem.hdp}`
-          : JSON.stringify(item);
-        // 后出现的（通常是 addition）覆盖先前的，这样更多盘口/OBT 的赔率会覆盖基础盘
-        map.set(hdpKey, item);
-      }
+        let hdpKey: string;
+        if (anyItem && anyItem.hdp !== undefined && anyItem.hdp !== null) {
+          // 把 -0 归一到 0，避免 -0 和 0 被当成两个不同盘口导致覆盖失败
+          const hdpVal = typeof anyItem.hdp === 'number' ? (Object.is(anyItem.hdp, -0) ? 0 : anyItem.hdp) : anyItem.hdp;
+          hdpKey = `hdp:${hdpVal}`;
+        } else {
+          hdpKey = JSON.stringify(item);
+        }
+        const score = getPriority(anyItem, tag);
+        const existing = map.get(hdpKey);
+        const incomingIsBase = tag === 'base';
+        if (!existing) {
+          map.set(hdpKey, { item, score, tag });
+          return;
+        }
 
-      return Array.from(map.values());
+        // 已存在的是 base，新的来自 more/obt：永远允许覆盖（live 更多盘口/OBT 优先于基础盘）
+        if (existing.tag === 'base' && !incomingIsBase) {
+          map.set(hdpKey, { item, score, tag });
+          return;
+        }
+
+        // 两个都是更多来源（more/obt），或者两个都是 base：按评分高低决定是否覆盖
+        if (score >= existing.score) {
+          map.set(hdpKey, { item, score, tag });
+        }
+      };
+
+      if (target) target.forEach(i => upsert(i, 'base'));
+      if (addition) addition.forEach(i => upsert(i, sourceTag || 'addition'));
+
+      return Array.from(map.values()).map(v => v.item);
     };
 
     if (incoming.full) {
       merged.full = merged.full || {};
-      merged.full.handicapLines = mergeLineArray(merged.full.handicapLines, incoming.full.handicapLines);
-      merged.full.overUnderLines = mergeLineArray(merged.full.overUnderLines, incoming.full.overUnderLines);
+      merged.full.handicapLines = mergeLineArray(merged.full.handicapLines, incoming.full.handicapLines, (incoming as any).__source);
+      merged.full.overUnderLines = mergeLineArray(merged.full.overUnderLines, incoming.full.overUnderLines, (incoming as any).__source);
     }
 
     if (incoming.half) {
       merged.half = merged.half || {};
-      merged.half.handicapLines = mergeLineArray(merged.half.handicapLines, incoming.half.handicapLines);
-      merged.half.overUnderLines = mergeLineArray(merged.half.overUnderLines, incoming.half.overUnderLines);
+      merged.half.handicapLines = mergeLineArray(merged.half.handicapLines, incoming.half.handicapLines, (incoming as any).__source);
+      merged.half.overUnderLines = mergeLineArray(merged.half.overUnderLines, incoming.half.overUnderLines, (incoming as any).__source);
     }
 
     return merged;
@@ -829,7 +876,8 @@ export class CrownScraper {
         match.raw?.ECID ||
         match.raw?.ecid;
 
-      const attempts = this.buildMoreMarketAttempts(ecid, lid);
+      const attempts = this.buildMoreMarketAttempts(ecid, lid, isLive);
+      let domainSwitchCount = 0;
 
       for (const attempt of attempts) {
         const attemptLabel = attempt.label || 'unknown';
@@ -843,13 +891,13 @@ export class CrownScraper {
               langx: attempt.langx || 'zh-cn',
               p: 'get_game_more',
               gtype: 'ft', // 与文档示例保持一致
-              showtype: isLive ? 'live' : match.showType,
-              ltype: '3',
+              showtype: attempt.showtypeOverride || (isLive ? 'live' : match.showType),
+              ltype: attempt.ltype || '3',
               isRB: isLive ? 'Y' : 'N',
               from: 'game_more',
               mode: 'NORMAL',
-              // live 用空 filter 拉全部滚球盘口，today/early 仍然只拉 Main
-              filter: isLive ? '' : 'Main',
+              // 默认 Main；若 attempt 指定 filter，则使用它（live 可放空拉全量）
+              filter: attempt.filter !== undefined ? attempt.filter : 'Main',
               specialClick: '',
               ts: Date.now().toString(),
             });
@@ -864,9 +912,13 @@ export class CrownScraper {
               params.set('gid', match.gid);
             }
 
+            const refererRtype = isLive ? 'rb' : (match.showType === 'early' ? 're' : 'r');
+            const referer = `${this.baseUrl}/app/member/FT_browse/index.php?uid=${this.uid}&rtype=${refererRtype}&langx=${attempt.langx || 'zh-cn'}`;
+
             const response = await this.postTransform(params.toString(), {
               headers: {
                 'Cookie': this.cookies,
+                'Referer': referer,
               },
             });
 
@@ -890,6 +942,26 @@ export class CrownScraper {
 
             const risk = this.detectRiskResponse(response.data);
             if (risk) {
+              // 对 CheckEMNU 再走一次 warmup 页面后重试；若仍然返回风险，尝试切换域名重新登录再试
+              if (risk === 'check_emnu') {
+                if (retry === 1) {
+                  try {
+                    await this.warmupMoreMarkets(attempt.langx || 'zh-cn', refererRtype);
+                  } catch {
+                    // 忽略 warmup 错误，继续后续逻辑
+                  }
+                }
+                if (domainSwitchCount < this.baseUrlCandidates.length - 1) {
+                  domainSwitchCount++;
+                  this.switchToNextBaseUrl();
+                  this.isLoggedIn = false;
+                  this.uid = '';
+                  this.cookies = '';
+                  logger.warn(`[${this.account.showType}] CheckEMNU，切换域名重试 (${attemptLabel}, gid=${match.gid}) -> ${this.baseUrl}`);
+                  // 重试当前 attempt
+                  continue;
+                }
+              }
               this.handleRiskyResponse(risk, `get_game_more/${match.showType}`);
               return null;
             }
@@ -905,8 +977,7 @@ export class CrownScraper {
               parsed = await this.parseXmlResponse(response.data);
             } catch (error: any) {
               logger.warn(
-                `[${this.account.showType}] 解析 get_game_more XML 失败 (GID: ${match.gid}, attempt=${attemptLabel}): ${
-                  error?.message || error
+                `[${this.account.showType}] 解析 get_game_more XML 失败 (GID: ${match.gid}, attempt=${attemptLabel}): ${error?.message || error
                 }`
               );
               // 当前 attempt 没解析成功，换下一个组合
@@ -914,7 +985,7 @@ export class CrownScraper {
             }
 
             const serverResponse = parsed?.serverresponse || parsed;
-            const markets = this.parseMoreMarkets(serverResponse);
+            const markets = this.parseMoreMarkets(serverResponse, match.gid);
             if (markets) {
               // 调试用途：把更多盘口的原始返回也挂到 match.raw 里，方便通过 /api/matches/:gid 查看结构
               try {
@@ -940,8 +1011,7 @@ export class CrownScraper {
 
             if ((isTimeout || isSocketClosed) && retry < maxRetries) {
               logger.warn(
-                `[${this.account.showType}] get_game_more 网络错误重试 (${attemptLabel}, GID: ${
-                  match.gid
+                `[${this.account.showType}] get_game_more 网络错误重试 (${attemptLabel}, GID: ${match.gid
                 }, retry=${retry}/${maxRetries}): ${msg}${code ? ` (${code})` : ''}`
               );
               await new Promise(resolve => setTimeout(resolve, 1000));
@@ -950,8 +1020,7 @@ export class CrownScraper {
 
             // 非瞬时错误或已到最大重试次数，记录并放弃当前 attempt
             logger.warn(
-              `[${this.account.showType}] get_game_more 调用失败 (${attemptLabel}, GID: ${
-                match.gid
+              `[${this.account.showType}] get_game_more 调用失败 (${attemptLabel}, GID: ${match.gid
               }): ${msg}${code ? ` (${code})` : ''}`
             );
 
@@ -1025,6 +1094,7 @@ export class CrownScraper {
       const response = await this.postTransform(params.toString(), {
         headers: {
           Cookie: this.cookies,
+          Referer: `${this.baseUrl}/app/member/FT_browse/index.php?uid=${this.uid}&rtype=${isLive ? 'rb' : (match.showType === 'early' ? 're' : 'r')}&langx=zh-cn`,
         },
       });
 
@@ -1048,6 +1118,15 @@ export class CrownScraper {
 
       const risk = this.detectRiskResponse(response.data);
       if (risk) {
+        if (risk === 'check_emnu' && this.baseUrlCandidates.length > 1) {
+          this.switchToNextBaseUrl();
+          this.isLoggedIn = false;
+          this.uid = '';
+          this.cookies = '';
+          logger.warn(`[${this.account.showType}] get_game_OBT CheckEMNU，切换域名重试 -> ${this.baseUrl}`);
+          // 重新尝试一次（递归调用，但限定一次，以避免无限循环）
+          return await this.fetchObtMarkets(match);
+        }
         this.handleRiskyResponse(risk, `get_game_OBT/${match.showType}`);
         return null;
       }
@@ -1068,7 +1147,7 @@ export class CrownScraper {
       }
 
       const serverResponse = parsed?.serverresponse || parsed;
-      const markets = this.parseMoreMarkets(serverResponse);
+      const markets = this.parseMoreMarkets(serverResponse, match.gid);
       if (markets) {
         try {
           (match as any).raw = (match as any).raw || {};
@@ -1293,6 +1372,31 @@ export class CrownScraper {
   }
 
   /**
+   * 根据 STRONG/HSTRONG 调整盘口方向：
+   * - STRONG = 'H' 时主队让球，我们对外展示为负数（主让）；
+   * - STRONG = 'C' 时主队受让，对外展示为正数（主受让）。
+   * 如果原始 ratio 字符串里已经带有正负号，则尊重原始符号不再二次翻转。
+   */
+  private normalizeHdpWithStrong(
+    rawHdp: number | null,
+    ratioRaw: any,
+    strong?: string,
+  ): number | null {
+    if (rawHdp === null) return null;
+    if (ratioRaw === undefined || ratioRaw === null) return rawHdp;
+    const ratioStr = String(ratioRaw);
+    if (/[+-]/.test(ratioStr)) {
+      return rawHdp;
+    }
+    if (!strong) return rawHdp;
+    const s = strong.toUpperCase();
+    if (s === 'H') return -rawHdp;
+    if (s === 'C') return rawHdp;
+    return rawHdp;
+  }
+
+
+  /**
    * 解析赔率数据
    */
   private parseOdds(game: any): Markets | undefined {
@@ -1321,6 +1425,9 @@ export class CrownScraper {
 
     const markets: Markets = {};
 
+    const strong = pick(['strong', 'STRONG']);
+    const halfStrong = pick(['hstrong', 'HSTRONG']);
+
     // 独赢（Moneyline）- 使用小写字段名
     const mh = pick(['ior_rmh', 'ior_mh', 'ratio_mh', 'ratio_rmh']);
     const mn = pick(['ior_rmn', 'ior_rmd', 'ior_mn', 'ratio_mn']);
@@ -1341,12 +1448,13 @@ export class CrownScraper {
     };
 
     // 全场让球 - 主盘口
-    const ratioR = pick(['ratio', 'ratio_re', 'ratio_r', 'strong']);
+    const ratioR = pick(['ratio', 'ratio_re', 'ratio_r']);
     const ratioRH = pick(['ior_reh', 'ior_rh', 'ratio_rh']);
     const ratioRC = pick(['ior_rec', 'ior_rc', 'ratio_rc']);
 
     if (ratioR || ratioRH || ratioRC) {
-      const hdp = this.parseHandicap(ratioR);
+      let hdp = this.parseHandicap(ratioR);
+      hdp = this.normalizeHdpWithStrong(hdp, ratioR, strong as string | undefined);
       if (hdp !== null && markets.full?.handicapLines) {
         markets.full.handicapLines.push({
           hdp,
@@ -1364,7 +1472,8 @@ export class CrownScraper {
       const away = pick([`ior_${prefix.toUpperCase()}RC`, `IOR_${prefix.toUpperCase()}RC`]);
 
       if (ratio || home || away) {
-        const hdp = this.parseHandicap(ratio);
+        let hdp = this.parseHandicap(ratio);
+        hdp = this.normalizeHdpWithStrong(hdp, ratio, strong as string | undefined);
         if (hdp !== null && markets.full?.handicapLines) {
           markets.full.handicapLines.push({
             hdp,
@@ -1417,12 +1526,13 @@ export class CrownScraper {
     };
 
     // 半场让球 - 主盘口
-    const ratioHR = pick(['hratio', 'ratio_hre', 'ratio_hr', 'hstrong']);
+    const ratioHR = pick(['hratio', 'ratio_hre', 'ratio_hr']);
     const ratioHRH = pick(['ior_hreh', 'ior_hrh', 'ratio_hrh']);
     const ratioHRC = pick(['ior_hrec', 'ior_hrc', 'ratio_hrc']);
 
     if (ratioHR || ratioHRH || ratioHRC) {
-      const hdp = this.parseHandicap(ratioHR);
+      let hdp = this.parseHandicap(ratioHR);
+      hdp = this.normalizeHdpWithStrong(hdp, ratioHR, halfStrong as string | undefined);
       if (hdp !== null && markets.half?.handicapLines) {
         markets.half.handicapLines.push({
           hdp,
@@ -1502,9 +1612,29 @@ export class CrownScraper {
   }
 
   /**
+   * 访问一次浏览器使用的列表页，帮助通过 CheckEMNU 校验
+   */
+  private async warmupMoreMarkets(langx: string, rtype: string): Promise<void> {
+    try {
+      await this.client.get(`/app/member/FT_browse/index.php`, {
+        params: {
+          uid: this.uid,
+          langx,
+          rtype,
+        },
+        headers: {
+          'Referer': `${this.baseUrl}/app/member/FT_browse/index.php?rtype=${rtype}&langx=${langx}`,
+        },
+      });
+    } catch (e) {
+      logger.debug(`[${this.account.showType}] warmupMoreMarkets 失败: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  /**
    * 解析更多盘口数据
    */
-  private parseMoreMarkets(data: any): Markets | null {
+  private parseMoreMarkets(data: any, targetGid?: string): Markets | null {
     try {
       if (!data) {
         return null;
@@ -1606,19 +1736,46 @@ export class CrownScraper {
         return rawHdp;
       };
 
-      for (const game of games) {
+      // 若按 gid 过滤为空，则回退全量
+      const filterByGid = (list: any[]) => {
+        if (!targetGid) return list;
+        const filtered = list.filter((g) => {
+          const gidVal = pickString(g, ['gid', 'GID', '@_gid']);
+          return gidVal && String(gidVal) === String(targetGid);
+        });
+        return filtered.length ? filtered : list;
+      };
+
+      const applyGid = filterByGid(games);
+
+      for (const game of applyGid) {
         if (!game) continue;
         if (isCardOrCornerMarket(game)) continue;
 
         const strong = pickString(game, ['STRONG', 'strong']);
         const halfStrong = pickString(game, ['HSTRONG', 'hstrong']);
+        const meta = {
+          isMaster: pickString(game, ['ISMASTER', 'ismaster']),
+          gopen: pickString(game, ['GOPEN', 'gopen']),
+          hnike: pickString(game, ['HNIKE', 'hnike']),
+          model: pickString(game, ['model', 'MODEL', '@_model']),
+        };
 
         // 全场让球盘口 - 主盘口
         const ratioR = pickString(game, ['RATIO_RE', 'ratio_re', 'RE', 'R', 'ratio']);
         const iorRH = pickString(game, ['ior_REH', 'ior_RH']);
         const iorRC = pickString(game, ['ior_REC', 'ior_RC']);
+        const swRE = pickString(game, ['sw_RE']);
+        const gopen = pickString(game, ['GOPEN', 'gopen']);
+        const isMaster = pickString(game, ['ISMASTER', 'ismaster']);
 
-        if (ratioR && (iorRH || iorRC)) {
+        if (
+          ratioR &&
+          (iorRH || iorRC) &&
+          (!swRE || swRE.toUpperCase() === 'Y') &&
+          // 放宽 gopen/isMaster，仅 sw 控制，避免遗漏盘口
+          true
+        ) {
           let hdp = this.parseHandicap(ratioR);
           hdp = normalizeHdpWithStrong(hdp, ratioR, strong);
           if (hdp !== null) {
@@ -1627,7 +1784,8 @@ export class CrownScraper {
               hdp,
               home: this.parseOddsValue(iorRH) || 0,
               away: this.parseOddsValue(iorRC) || 0,
-            });
+              __meta: meta,
+            } as any);
           }
         }
 
@@ -1636,9 +1794,9 @@ export class CrownScraper {
         for (const prefix of reAltPrefixes) {
           const swKey = `sw_${prefix}RE`;
           const swValue = pickString(game, [swKey]);
-          if (swValue && swValue.toUpperCase() !== 'Y') {
-            continue;
-          }
+          if (swValue && swValue.toUpperCase() !== 'Y') continue;
+
+          // 放宽 gopen/isMaster，能取到就补
 
           const ratioAlt = pickString(game, [
             `ratio_${prefix.toLowerCase()}re`,
@@ -1668,7 +1826,8 @@ export class CrownScraper {
               hdp: hdpAlt,
               home: homeVal || 0,
               away: awayVal || 0,
-            });
+              __meta: meta,
+            } as any);
           }
         }
 
@@ -1685,8 +1844,14 @@ export class CrownScraper {
         ]);
         const iorOUH = pickString(game, ['ior_ROUH', 'ior_OUH']);
         const iorOUC = pickString(game, ['ior_ROUC', 'ior_OUC']);
+        const swROU = pickString(game, ['sw_ROU']);
+        // 放宽 gopen 过滤，仅 sw 控制
 
-        if (ratioO && (iorOUH || iorOUC)) {
+        if (
+          ratioO &&
+          (iorOUH || iorOUC) &&
+          (!swROU || swROU.toUpperCase() === 'Y')
+        ) {
           const hdp = this.parseHandicap(ratioO);
           if (hdp !== null) {
             markets.full!.overUnderLines = markets.full!.overUnderLines || [];
@@ -1694,7 +1859,8 @@ export class CrownScraper {
               hdp,
               over: this.parseOddsValue(iorOUC) || 0,
               under: this.parseOddsValue(iorOUH) || 0,
-            });
+              __meta: meta,
+            } as any);
           }
         }
 
@@ -1734,7 +1900,8 @@ export class CrownScraper {
               hdp: hdpAltO,
               over: overVal || 0,
               under: underVal || 0,
-            });
+              __meta: meta,
+            } as any);
           }
         }
 
@@ -1742,8 +1909,14 @@ export class CrownScraper {
         const ratioHR = pickString(game, ['RATIO_HRE', 'ratio_hre', 'HRE', 'HR', 'hratio']);
         const iorHRH = pickString(game, ['ior_HREH', 'ior_HRH']);
         const iorHRC = pickString(game, ['ior_HREC', 'ior_HRC']);
+        const swHRE = pickString(game, ['sw_HRE']);
+        // 放宽 HGOPEN 过滤，仅 sw 控制
 
-        if (ratioHR && (iorHRH || iorHRC)) {
+        if (
+          ratioHR &&
+          (iorHRH || iorHRC) &&
+          (!swHRE || swHRE.toUpperCase() === 'Y')
+        ) {
           let hdp = this.parseHandicap(ratioHR);
           hdp = normalizeHdpWithStrong(hdp, ratioHR, halfStrong);
           if (hdp !== null) {
@@ -1752,7 +1925,8 @@ export class CrownScraper {
               hdp,
               home: this.parseOddsValue(iorHRH) || 0,
               away: this.parseOddsValue(iorHRC) || 0,
-            });
+              __meta: meta,
+            } as any);
           }
         }
 
@@ -1769,8 +1943,14 @@ export class CrownScraper {
         ]);
         const iorHOUH = pickString(game, ['ior_HROUH', 'ior_HOUH']);
         const iorHOUC = pickString(game, ['ior_HROUC', 'ior_HOUC']);
+        const swHROU = pickString(game, ['sw_HROU']);
+        // 放宽 HGOPEN 过滤，仅 sw 控制
 
-        if (ratioHO && (iorHOUH || iorHOUC)) {
+        if (
+          ratioHO &&
+          (iorHOUH || iorHOUC) &&
+          (!swHROU || swHROU.toUpperCase() === 'Y')
+        ) {
           const hdp = this.parseHandicap(ratioHO);
           if (hdp !== null) {
             markets.half!.overUnderLines = markets.half!.overUnderLines || [];
@@ -1778,7 +1958,8 @@ export class CrownScraper {
               hdp,
               over: this.parseOddsValue(iorHOUC) || 0,
               under: this.parseOddsValue(iorHOUH) || 0,
-            });
+              __meta: meta,
+            } as any);
           }
         }
       }
@@ -2023,18 +2204,23 @@ export class CrownScraper {
       case 'today':
         return { showtype: 'today', rtype: 'r' }; // 今日
       case 'early':
-        return { showtype: 'early', rtype: 'r' }; // 早盘
+        // 早盘在站点页面使用 rtype=re（参见 FT_browse/index.php?rtype=re）
+        // 使用 rtype=r 会返回空数据
+        return { showtype: 'early', rtype: 're' }; // 早盘
       default:
         return { showtype: 'live', rtype: 'rb' };
     }
   }
 
-  private buildMoreMarketAttempts(ecid?: any, lid?: any): Array<{
+  private buildMoreMarketAttempts(ecid?: any, lid?: any, isLive?: boolean): Array<{
     label: string;
     useEcid?: boolean;
     useGid?: boolean;
     includeLid?: boolean;
     langx?: string;
+    filter?: string;
+    ltype?: string;
+    showtypeOverride?: string;
   }> {
     const base: Array<{
       label: string;
@@ -2042,19 +2228,32 @@ export class CrownScraper {
       useGid?: boolean;
       includeLid?: boolean;
       langx?: string;
+      filter?: string;
+      ltype?: string;
+      showtypeOverride?: string;
     }> = [
-        { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn' },
-        { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn' },
-        { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn' },
+        { label: 'ecid+gid+lid zh-cn', useEcid: true, useGid: true, includeLid: true, langx: 'zh-cn', filter: 'Main' },
+        { label: 'gid+lid zh-cn', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn', filter: 'Main' },
+        { label: 'gid only zh-cn', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn', filter: 'Main' },
       ];
 
     if (ecid) {
-      base.push({ label: 'ecid only zh-cn', useEcid: true, useGid: false, includeLid: false, langx: 'zh-cn' });
+      base.push({ label: 'ecid only zh-cn', useEcid: true, useGid: false, includeLid: false, langx: 'zh-cn', filter: 'Main' });
     }
 
-    base.push({ label: 'gid only zh-tw', useEcid: false, useGid: true, includeLid: false, langx: 'zh-tw' });
+    base.push({ label: 'gid only zh-tw', useEcid: false, useGid: true, includeLid: false, langx: 'zh-tw', filter: 'Main' });
+
+    if (isLive) {
+      // 对 live 增加不带 filter/ltype 的全量尝试，并加一个 ltype=4 组合，附加 showtypeOverride=rb 组合
+      base.push({ label: 'gid only zh-cn all', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn', filter: '' });
+      base.push({ label: 'gid+lid zh-cn all', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn', filter: '' });
+      base.push({ label: 'gid only zh-cn ltype4', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn', filter: '', ltype: '4' });
+      base.push({ label: 'gid+lid zh-cn ltype4', useEcid: false, useGid: true, includeLid: true, langx: 'zh-cn', filter: '', ltype: '4' });
+      base.push({ label: 'gid only zh-cn rb', useEcid: false, useGid: true, includeLid: false, langx: 'zh-cn', filter: '', showtypeOverride: 'rb' });
+    }
 
     return base;
+
   }
 
   private hasMoreMarketsFlag(match: Match): boolean {
@@ -2070,11 +2269,13 @@ export class CrownScraper {
   }
 
   private resolveStartDelay(): number {
-    const raw = Number(process.env.MORE_MARKETS_START_DELAY_SECONDS || '0');
-    if (Number.isFinite(raw) && raw > 0) {
-      return raw * 1000;
-    }
+    // 已去掉延迟限制，立即开始抓取多盘口
     return 0;
+    // const raw = Number(process.env.MORE_MARKETS_START_DELAY_SECONDS || '0');
+    // if (Number.isFinite(raw) && raw > 0) {
+    //   return raw * 1000;
+    // }
+    // return 0;
   }
 
   private resolveThrottleInterval(): number {

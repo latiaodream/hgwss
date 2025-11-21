@@ -1282,6 +1282,9 @@ export class CrownScraper {
             },
           };
 
+          // 保存原始数据到私有字段，供监控页面使用
+          (match as any)._rawGame = game;
+
           // 直接从 get_game_list 的 game 字段解析基础盘（独赢/让球/大小球）
           const markets = this.parseOdds(game);
           if (markets && (
@@ -1855,16 +1858,12 @@ export class CrownScraper {
           }
         }
 
-        // 全场大小球盘口 - 主盘口
+        // 全场大小球盘口 - 主盘口（严格只用 ROUO/ROUU，避免混入其它大小）
         const ratioO = pickString(game, [
           'RATIO_ROUO',
           'RATIO_ROUU',
           'ratio_rouo',
           'ratio_rouu',
-          'ROU',
-          'OU',
-          'ratio_o',
-          'ratio_u',
         ]);
         const iorOUH = pickString(game, ['ior_ROUH', 'ior_OUH']);
         const iorOUC = pickString(game, ['ior_ROUC', 'ior_OUC']);

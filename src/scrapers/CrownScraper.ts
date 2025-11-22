@@ -1878,8 +1878,10 @@ export class CrownScraper {
           }
         }
 
-        // 全场大小球盘口 - 更多盘 (AROU/BROU/CROU/DROU/EROU/FROU)
-        const ouAltPrefixes = ['A', 'B', 'C', 'D', 'E', 'F'];
+        // 全场大小球盘口 - 更多盘 (AROU/BROU/CROU/EROU/FROU)
+        // 注意：这里**刻意不**包括 DROU，因为 DROU 在实盘里通常是球队进球数大小球(例如主队进球数 0.5)，
+        // 如果混进全场总进球，会在页面上出现一个多余的 0.5 盘口（用户反馈这是绝对错误的）。
+        const ouAltPrefixes = ['A', 'B', 'C', 'E', 'F'];
         for (const prefix of ouAltPrefixes) {
           const swKey = `sw_${prefix}ROU`;
           const swValue = pickString(game, [swKey]);
